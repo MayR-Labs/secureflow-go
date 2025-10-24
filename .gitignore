@@ -62,8 +62,12 @@ coverage.txt
 
 # Local build output for Go modules
 # (if you build executables named after the module, ignore them)
-# example: secureflow-go (add your binary name below)
-# secureflow-go
+secureflow
+
+# SecureFlow generated files
+enc_keys/
+test_dec_keys/
+secureflow.yaml
 
 # End of file
 
