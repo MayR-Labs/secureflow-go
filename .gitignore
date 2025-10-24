@@ -1,0 +1,69 @@
+# .gitignore for a Go CLI application
+
+# Binaries for programs and plugins
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# If you build to a bin/ or build/ directory
+/bin/
+/build/
+/dist/
+/out/
+
+# Go dependency directory (uncomment if you check in vendor)
+vendor/
+
+# Go workspace and module files (keep go.mod/go.sum in repo)
+go.work
+
+# Coverage, profiling
+coverage.out
+*.coverprofile
+*.pprof
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor directories and files
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+*.swp
+*~
+
+# Environment files
+.env
+.env.*
+
+# Generated files
+# (uncomment patterns you want ignored for generated code)
+# *_gen.go
+# */*_gen.go
+
+# Terraform/other tool caches
+.terraform/
+
+# Node tooling (if repo contains web assets)
+node_modules/
+
+# Misc
+coverage.txt
+
+# Local build output for Go modules
+# (if you build executables named after the module, ignore them)
+# example: secureflow-go (add your binary name below)
+# secureflow-go
+
+# End of file
+
