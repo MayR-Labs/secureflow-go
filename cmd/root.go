@@ -10,7 +10,7 @@ import (
 var (
 	// Version information
 	Version = "1.0.0"
-	
+
 	// Global flags
 	cfgFile        string
 	nonInteractive bool

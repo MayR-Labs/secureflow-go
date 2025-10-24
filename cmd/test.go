@@ -57,7 +57,7 @@ func runTest(cmd *cobra.Command, args []string) error {
 	successCount := 0
 	for _, fileMapping := range cfg.Files {
 		encryptedPath := filepath.Join(cfg.OutputDir, fileMapping.Output)
-		
+
 		fmt.Printf("%s 📄 Decrypting %s...\n", utils.ColorYellow, encryptedPath)
 
 		// Check if encrypted file exists
