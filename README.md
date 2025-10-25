@@ -138,16 +138,43 @@ Create a default `secureflow.yaml` configuration file:
 secureflow init
 ```
 
-This generates:
+Use a project template for quick setup:
+
+```bash
+# Interactive template selection
+secureflow init
+
+# Or specify a template directly
+secureflow init --template flutter
+secureflow init --template reactnative
+secureflow init --template web
+secureflow init --template docker
+secureflow init --template k8s
+secureflow init --template microservices
+```
+
+**Available templates:**
+- `default` - React Native/Mobile app with Android/iOS files
+- `reactnative` - React Native specific configuration
+- `flutter` - Flutter mobile app configuration
+- `web` - Web application with multiple environments
+- `docker` - Docker deployment configuration
+- `k8s` - Kubernetes secrets configuration
+- `microservices` - Microservices architecture with multiple services
+
+All templates include `copy_to: .env` for `.env.prod` files to automatically create `.env` after decryption.
+
+This generates a configuration file like:
 
 ```yaml
-# secureflow.yaml
+# secureflow.yaml (Flutter template example)
 output_dir: enc_keys
 test_output_dir: test_dec_keys
 
 files:
   - input: .env.prod
     output: .env.prod.encrypted
+    copy_to: .env
   - input: android/app/keystore.jks
     output: keystore.jks.encrypted
 ```
@@ -234,6 +261,7 @@ test_output_dir: test_dec_keys # Where test decryption outputs go
 files:
   - input: .env.production       # Source file (relative to project root)
     output: .env.production.encrypted  # Encrypted filename
+    copy_to: .env                # (Optional) Copy decrypted file to this path
 
   - input: config/database.yml
     output: database.yml.encrypted
@@ -249,6 +277,20 @@ files:
 - **`files`**: Array of file entries
   - **`input`**: Path to source file (relative to project root)
   - **`output`**: Encrypted filename (just filename, not path)
+  - **`copy_to`**: *(Optional)* Copy decrypted file to this path - useful when apps expect `.env` but you store `.env.prod`
+
+### The `copy_to` Feature
+
+When decrypting files, SecureFlow can automatically copy the decrypted file to another location. This is particularly useful for environment files where your application expects `.env` but you store `.env.prod` or `.env.production`:
+
+```yaml
+files:
+  - input: .env.prod
+    output: .env.prod.encrypted
+    copy_to: .env  # Automatically creates .env from .env.prod after decryption
+```
+
+After decryption, both `.env.prod` and `.env` will exist with identical content.
 
 ### Example Configurations
 

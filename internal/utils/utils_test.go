@@ -219,3 +219,46 @@ func TestColorConstants(t *testing.T) {
 		}
 	}
 }
+
+func TestCopyFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	srcPath := filepath.Join(tmpDir, "source.txt")
+	dstPath := filepath.Join(tmpDir, "dest.txt")
+
+	// Create source file
+	content := []byte("test content for copy")
+	if err := os.WriteFile(srcPath, content, 0644); err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// Test copy
+	if err := CopyFile(srcPath, dstPath); err != nil {
+		t.Fatalf("CopyFile failed: %v", err)
+	}
+
+	// Verify destination file exists
+	if !FileExists(dstPath) {
+		t.Error("Destination file should exist after copy")
+	}
+
+	// Verify content matches
+	dstContent, err := os.ReadFile(dstPath)
+	if err != nil {
+		t.Fatalf("Failed to read destination file: %v", err)
+	}
+
+	if string(dstContent) != string(content) {
+		t.Errorf("Content mismatch: got %q, want %q", dstContent, content)
+	}
+}
+
+func TestCopyFileNonExistent(t *testing.T) {
+	tmpDir := t.TempDir()
+	srcPath := filepath.Join(tmpDir, "nonexistent.txt")
+	dstPath := filepath.Join(tmpDir, "dest.txt")
+
+	err := CopyFile(srcPath, dstPath)
+	if err == nil {
+		t.Error("Expected error when copying non-existent file")
+	}
+}

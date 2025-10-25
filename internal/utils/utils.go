@@ -100,3 +100,19 @@ func FileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+// CopyFile copies a file from src to dst
+func CopyFile(src, dst string) error {
+	// Read source file
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("failed to read source file: %w", err)
+	}
+
+	// Write to destination file
+	if err := os.WriteFile(dst, data, 0644); err != nil {
+		return fmt.Errorf("failed to write destination file: %w", err)
+	}
+
+	return nil
+}

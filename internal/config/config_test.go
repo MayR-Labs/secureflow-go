@@ -157,3 +157,150 @@ func TestEmptyFilesList(t *testing.T) {
 		t.Errorf("Expected 0 files, got %d", len(loadedConfig.Files))
 	}
 }
+
+func TestCopyToField(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "copy_to.yaml")
+
+	// Create config with copy_to field
+	testConfig := &Config{
+		OutputDir:     "enc",
+		TestOutputDir: "dec",
+		Files: []FileMapping{
+			{Input: ".env.prod", Output: ".env.prod.encrypted", CopyTo: ".env"},
+			{Input: "config.json", Output: "config.json.encrypted"},
+		},
+	}
+
+	// Save and load
+	if err := testConfig.Save(configPath); err != nil {
+		t.Fatalf("Failed to save config: %v", err)
+	}
+
+	loadedConfig, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	// Verify first file has copy_to
+	if loadedConfig.Files[0].CopyTo != ".env" {
+		t.Errorf("Expected CopyTo '.env', got '%s'", loadedConfig.Files[0].CopyTo)
+	}
+
+	// Verify second file has empty copy_to
+	if loadedConfig.Files[1].CopyTo != "" {
+		t.Errorf("Expected empty CopyTo, got '%s'", loadedConfig.Files[1].CopyTo)
+	}
+}
+
+func TestTemplateConfig(t *testing.T) {
+	tests := []struct {
+		name         string
+		template     string
+		expectFiles  int
+		expectCopyTo bool
+	}{
+		{"Default", "default", 4, true},
+		{"ReactNative", "reactnative", 6, true},
+		{"React-Native", "react-native", 6, true},
+		{"Flutter", "flutter", 6, true},
+		{"Web", "web", 5, true},
+		{"Docker", "docker", 4, true},
+		{"K8s", "k8s", 4, true},
+		{"Kubernetes", "kubernetes", 4, true},
+		{"Microservices", "microservices", 5, true},
+		{"Invalid", "invalid-template", 4, true}, // Should default
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := TemplateConfig(tt.template)
+
+			if cfg == nil {
+				t.Fatal("TemplateConfig returned nil")
+			}
+
+			if len(cfg.Files) != tt.expectFiles {
+				t.Errorf("Expected %d files, got %d", tt.expectFiles, len(cfg.Files))
+			}
+
+			if tt.expectCopyTo {
+				// Check if at least one file has copy_to set
+				hasCopyTo := false
+				for _, f := range cfg.Files {
+					if f.CopyTo != "" {
+						hasCopyTo = true
+						break
+					}
+				}
+				if !hasCopyTo {
+					t.Error("Expected at least one file to have copy_to set")
+				}
+			}
+		})
+	}
+}
+
+func TestReactNativeConfig(t *testing.T) {
+	cfg := ReactNativeConfig()
+	if cfg == nil {
+		t.Fatal("ReactNativeConfig returned nil")
+	}
+	if len(cfg.Files) == 0 {
+		t.Error("Expected non-empty files list")
+	}
+	// First file should have copy_to for .env
+	if cfg.Files[0].CopyTo != ".env" {
+		t.Errorf("Expected first file to have copy_to '.env', got '%s'", cfg.Files[0].CopyTo)
+	}
+}
+
+func TestFlutterConfig(t *testing.T) {
+	cfg := FlutterConfig()
+	if cfg == nil {
+		t.Fatal("FlutterConfig returned nil")
+	}
+	if len(cfg.Files) == 0 {
+		t.Error("Expected non-empty files list")
+	}
+}
+
+func TestWebConfig(t *testing.T) {
+	cfg := WebConfig()
+	if cfg == nil {
+		t.Fatal("WebConfig returned nil")
+	}
+	if len(cfg.Files) == 0 {
+		t.Error("Expected non-empty files list")
+	}
+}
+
+func TestDockerConfig(t *testing.T) {
+	cfg := DockerConfig()
+	if cfg == nil {
+		t.Fatal("DockerConfig returned nil")
+	}
+	if len(cfg.Files) == 0 {
+		t.Error("Expected non-empty files list")
+	}
+}
+
+func TestK8sConfig(t *testing.T) {
+	cfg := K8sConfig()
+	if cfg == nil {
+		t.Fatal("K8sConfig returned nil")
+	}
+	if len(cfg.Files) == 0 {
+		t.Error("Expected non-empty files list")
+	}
+}
+
+func TestMicroservicesConfig(t *testing.T) {
+	cfg := MicroservicesConfig()
+	if cfg == nil {
+		t.Fatal("MicroservicesConfig returned nil")
+	}
+	if len(cfg.Files) == 0 {
+		t.Error("Expected non-empty files list")
+	}
+}
