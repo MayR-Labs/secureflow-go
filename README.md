@@ -1,27 +1,75 @@
-# 🧩 SecureFlow CLI
+# 🔐 SecureFlow CLI
 
-**SecureFlow** is a lightweight, Go-based CLI for securely encrypting and decrypting sensitive files like environment variables, keystores, and service credentials for local and CI/CD use.
+**SecureFlow** is a lightweight, cross-platform CLI tool for securely encrypting and decrypting sensitive files using AES-256 encryption. Built with Go, it provides a simple, reliable way to manage secrets in your projects and CI/CD pipelines.
 
-It’s designed to replace fragile Bash scripts with a fast, cross-platform executable that works seamlessly across Linux, macOS, and Windows.
-
----
-
-## ⚙️ Features
-
-* AES-256 encryption (using OpenSSL-compatible standards)
-* Interactive and non-interactive modes
-* Automatically generates and uses a `secureflow.yaml` configuration file
-* Encrypted file metadata reports
-* Safe testing mode (`secureflow test`)
-* Clean error handling and consistent output
+**Perfect for**: Environment variables, keystores, SSL certificates, service credentials, API keys, database passwords, and any sensitive configuration files.
 
 ---
 
-## 🚀 Installation
+## ✨ Why SecureFlow?
+
+- **🔒 Strong Security**: AES-256-CBC encryption with PBKDF2 key derivation (OpenSSL-compatible)
+- **🚀 Fast & Lightweight**: Single binary, no dependencies, instant startup
+- **🌍 Cross-Platform**: Works on Linux, macOS, and Windows
+- **🤖 CI/CD Ready**: Non-interactive mode designed for automation
+- **📝 Configuration-Based**: Simple YAML config for managing multiple files
+- **🧪 Safe Testing**: Test decryption without overwriting existing files
+- **📊 Detailed Reports**: Track what's encrypted, when, and metadata
+- **💪 Production-Ready**: Battle-tested, reliable error handling
+
+---
+
+## 📋 Table of Contents
+
+- [Quick Start](#-quick-start)
+- [Installation](#-installation)
+- [Usage](#-usage)
+- [Configuration](#-configuration)
+- [CI/CD Integration](#-cicd-integration)
+- [Documentation](#-documentation)
+- [Security](#-security)
+- [Common Use Cases](#-common-use-cases)
+- [Contributing](#-contributing)
+
+---
+
+## 🚀 Quick Start
+
+```bash
+# 1. Install SecureFlow (Linux/macOS)
+curl -sSL https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash
+
+# 2. Initialize configuration
+cd your-project
+secureflow init
+
+# 3. Edit secureflow.yaml to list your sensitive files
+vim secureflow.yaml
+
+# 4. Encrypt your files
+secureflow encrypt
+
+# 5. Commit encrypted files to git
+git add enc_keys/ secureflow.yaml
+git commit -m "Add encrypted secrets"
+
+# 6. Add originals to .gitignore
+echo ".env.prod" >> .gitignore
+```
+
+**That's it!** Your secrets are now encrypted and safe to commit. Your team can decrypt them with:
+
+```bash
+secureflow decrypt
+```
+
+---
+
+## 🔧 Installation
 
 ### Quick Install (Linux/macOS)
 
-Use the installation script for the easiest setup:
+The easiest way to install SecureFlow:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash
@@ -35,35 +83,35 @@ wget -qO- https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install
 
 ### Manual Installation
 
-#### From Release (recommended)
+#### Download Pre-built Binary
 
-Download the precompiled binary for your OS from the [Releases](https://github.com/MayR-Labs/secureflow-go/releases) page.
+Download the appropriate binary for your OS from the [Releases](https://github.com/MayR-Labs/secureflow-go/releases) page.
 
-**Linux (AMD64):**
+**Linux (AMD64)**:
 ```bash
 wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-linux-amd64
 chmod +x secureflow-linux-amd64
 sudo mv secureflow-linux-amd64 /usr/local/bin/secureflow
 ```
 
-**macOS (Intel):**
+**macOS (Intel)**:
 ```bash
 wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-darwin-amd64
 chmod +x secureflow-darwin-amd64
 sudo mv secureflow-darwin-amd64 /usr/local/bin/secureflow
 ```
 
-**macOS (Apple Silicon):**
+**macOS (Apple Silicon)**:
 ```bash
 wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-darwin-arm64
 chmod +x secureflow-darwin-arm64
 sudo mv secureflow-darwin-arm64 /usr/local/bin/secureflow
 ```
 
-**Windows:**
+**Windows**:
 Download `secureflow-windows-amd64.exe` from the [Releases](https://github.com/MayR-Labs/secureflow-go/releases) page and add it to your PATH.
 
-### From Source
+#### Build from Source
 
 ```bash
 git clone https://github.com/MayR-Labs/secureflow-go.git
@@ -80,15 +128,17 @@ secureflow --version
 
 ---
 
-## 🧰 Usage
+## 💻 Usage
 
-### 1. Initialise a new config
+### Initialize Configuration
+
+Create a default `secureflow.yaml` configuration file:
 
 ```bash
 secureflow init
 ```
 
-Creates a default `secureflow.yaml` file in your current directory:
+This generates:
 
 ```yaml
 # secureflow.yaml
@@ -100,83 +150,248 @@ files:
     output: .env.prod.encrypted
   - input: android/app/keystore.jks
     output: keystore.jks.encrypted
-  - input: android/key.properties
-    output: key.properties.encrypted
-  - input: android/service-key.json
-    output: service-key.json.encrypted
 ```
 
-You can modify this file to fit your project structure.
+**Edit this file** to match your project's sensitive files.
 
----
+### Encrypt Files
 
-### 2. Encrypt Files
+**Interactive mode** (prompts for password and optional hint):
 
 ```bash
 secureflow encrypt
 ```
 
-You’ll be prompted for an encryption password, password hint, and optional note.
-
-For non-interactive mode (CI/CD):
+**Non-interactive mode** (for scripts and CI/CD):
 
 ```bash
 secureflow encrypt --password "your_password" --non-interactive
 ```
 
-To specify a custom config file:
+**Custom config file**:
 
 ```bash
-secureflow encrypt --config ./path/to/secureflow.yaml
+secureflow encrypt --config ./path/to/custom-config.yaml
 ```
 
-All encrypted files will be saved to the directory specified in the YAML file (default: `enc_keys`).
+All encrypted files are saved to `enc_keys/` (or your configured `output_dir`).
 
----
+### Decrypt Files
 
-### 3. Decrypt Files
-
-Decrypt files for local development or CI pipelines:
+**Interactive mode**:
 
 ```bash
-secureflow decrypt --password "your_password"
+secureflow decrypt
 ```
 
-For non-interactive mode:
+**Non-interactive mode** (for CI/CD):
 
 ```bash
 secureflow decrypt --password "$ENCRYPTION_PASSWORD" --non-interactive
 ```
 
-To use a custom config:
+**Custom config file**:
 
 ```bash
-secureflow decrypt --config ./custom/secureflow.yaml
+secureflow decrypt --config ./custom-config.yaml
 ```
 
----
+### Test Decryption
 
-### 4. Test Decryption
-
-This mode decrypts files into a separate test directory without overwriting existing secrets.
+Test decryption without overwriting existing files (decrypts to `test_dec_keys/`):
 
 ```bash
 secureflow test
 ```
 
-Non-interactive version:
+Or non-interactively:
 
 ```bash
 secureflow test --password "your_password" --non-interactive
 ```
 
+### View Help
+
+```bash
+secureflow --help
+secureflow encrypt --help
+secureflow decrypt --help
+secureflow test --help
+```
+
 ---
 
-## 🧾 Report File
+## 📝 Configuration
 
-Each encryption run generates a detailed `report.txt` inside the output directory.
+SecureFlow uses a YAML configuration file (`secureflow.yaml`) to define which files to encrypt/decrypt.
 
-Example:
+### Basic Configuration
+
+```yaml
+output_dir: enc_keys           # Where encrypted files are stored
+test_output_dir: test_dec_keys # Where test decryption outputs go
+
+files:
+  - input: .env.production       # Source file (relative to project root)
+    output: .env.production.encrypted  # Encrypted filename
+
+  - input: config/database.yml
+    output: database.yml.encrypted
+    
+  - input: ssl/private.key
+    output: ssl-private.key.encrypted
+```
+
+### Configuration Options
+
+- **`output_dir`**: Directory for encrypted files (committed to git)
+- **`test_output_dir`**: Directory for test decryption (added to .gitignore)
+- **`files`**: Array of file entries
+  - **`input`**: Path to source file (relative to project root)
+  - **`output`**: Encrypted filename (just filename, not path)
+
+### Example Configurations
+
+See the [Configuration Guide](./docs/configuration.md) for detailed examples including:
+- Mobile apps (Flutter, React Native)
+- Web applications
+- Microservices
+- Docker deployments
+- Kubernetes secrets
+- Multi-environment setups
+
+**Quick example configs**:
+- [Basic](./docs/configuration.md#basic-configuration)
+- [Mobile App](./docs/configuration.md#mobile-app-flutterreact-native)
+- [Web Application](./docs/configuration.md#web-application)
+- [Microservices](./docs/configuration.md#microservices-architecture)
+
+---
+
+## 🤖 CI/CD Integration
+
+SecureFlow is designed to work seamlessly in CI/CD pipelines with its non-interactive mode.
+
+### Quick CI/CD Example (GitHub Actions)
+
+```yaml
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      # Install SecureFlow
+      - name: Install SecureFlow
+        run: |
+          wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-linux-amd64
+          chmod +x secureflow-linux-amd64
+          sudo mv secureflow-linux-amd64 /usr/local/bin/secureflow
+      
+      # Decrypt secrets
+      - name: Decrypt secrets
+        run: |
+          secureflow decrypt --password "${{ secrets.SECUREFLOW_PASSWORD }}" --non-interactive
+      
+      # Build and deploy
+      - name: Build & Deploy
+        run: |
+          npm run build
+          ./deploy.sh
+```
+
+### Supported Platforms
+
+SecureFlow works with all major CI/CD platforms:
+
+- **GitHub Actions** ✅
+- **GitLab CI** ✅
+- **Bitbucket Pipelines** ✅
+- **Jenkins** ✅
+- **CircleCI** ✅
+- **Azure Pipelines** ✅
+- **Travis CI** ✅
+- **Any CI/CD platform** that can run shell commands ✅
+
+### Complete CI/CD Guide
+
+See our comprehensive [CI/CD Usage Guide](./docs/cicd-usage.md) for:
+- Platform-specific setup instructions
+- Best practices for secrets management
+- Multi-environment configurations
+- Caching strategies
+- Security considerations
+- Troubleshooting CI/CD issues
+
+---
+
+## 📚 Documentation
+
+Comprehensive documentation is available in the `docs/` directory:
+
+### Core Documentation
+
+- **[Configuration Guide](./docs/configuration.md)** - Detailed configuration options, examples, and best practices
+- **[CI/CD Usage Guide](./docs/cicd-usage.md)** - Complete guide for integrating SecureFlow into your CI/CD pipelines
+- **[Security Guide](./docs/security.md)** - Security best practices, encryption details, and compliance considerations
+- **[Troubleshooting](./docs/troubleshooting.md)** - Common issues, solutions, and debugging tips
+
+### Additional Resources
+
+- **[Examples Directory](./examples/)** - Practical usage examples and sample configurations
+  - [Usage Examples](./examples/README.md) - Real-world usage scenarios
+  - [Sample Configs](./examples/configs.md) - Configuration templates for different project types
+
+---
+
+## 🔐 Security
+
+### Encryption Details
+
+- **Algorithm**: AES-256-CBC (Advanced Encryption Standard, 256-bit)
+- **Key Derivation**: PBKDF2 with SHA-256
+- **Format**: OpenSSL-compatible (Salted__ header + 8-byte salt + encrypted data)
+- **Compatibility**: Files can be encrypted/decrypted with OpenSSL
+
+### Security Model
+
+- **Passwords are never stored or logged**
+- **Strong encryption** (AES-256-CBC) with proper key derivation (PBKDF2)
+- **OpenSSL compatible** - industry-standard format
+- **Non-interactive mode** for secure CI/CD integration
+- **Clean password handling** - passwords cleared from memory after use
+
+### Best Practices
+
+✅ **DO**:
+- Use strong passwords (16+ characters, mixed case, numbers, symbols)
+- Store passwords in password managers
+- Rotate passwords periodically (every 3-6 months)
+- Use different passwords for different environments
+- Keep plaintext secrets in `.gitignore`
+- Commit only encrypted files to version control
+
+❌ **DON'T**:
+- Commit plaintext secrets to git
+- Share passwords via email or Slack
+- Reuse passwords across projects
+- Log or print passwords
+- Store passwords in code or config files
+
+For comprehensive security guidance, see our [Security Guide](./docs/security.md).
+
+---
+
+## 📊 Encryption Reports
+
+Each encryption run generates a `report.txt` in your output directory with detailed metadata:
 
 ```
 Encryption Report
@@ -194,113 +409,197 @@ Last Modified:  2025-10-22 11:24:09
 ----------------------------------------
 ```
 
+This helps you track:
+- What files are encrypted
+- When they were encrypted
+- Password hints for team reference
+- File sizes and metadata
+
 ---
 
-## 💡 Common Use Cases
+## 🎯 Common Use Cases
 
-### CI/CD Decryption Step
+### Local Development
 
-In GitHub Actions, for example:
+Decrypt secrets when setting up a new project:
+
+```bash
+# Clone project
+git clone https://github.com/yourorg/your-project.git
+cd your-project
+
+# Install SecureFlow
+curl -sSL https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash
+
+# Decrypt secrets (get password from team)
+secureflow decrypt
+```
+
+### CI/CD Deployment
+
+Add to your CI/CD pipeline (example: GitHub Actions):
 
 ```yaml
 - name: Decrypt secrets
   run: secureflow decrypt --password ${{ secrets.SECUREFLOW_PASSWORD }} --non-interactive
 ```
 
-### Local Encryption
+### Team Onboarding
+
+New team member joining:
+
+1. Install SecureFlow
+2. Clone repository
+3. Get decryption password from team lead (via secure channel)
+4. Run `secureflow decrypt`
+5. Start working!
+
+### Environment Management
+
+Manage secrets across multiple environments:
 
 ```bash
-secureflow encrypt
+# Production
+secureflow encrypt --config secureflow.prod.yaml --password "$PROD_PASS"
+
+# Staging
+secureflow encrypt --config secureflow.staging.yaml --password "$STAGING_PASS"
+
+# Development
+secureflow encrypt --config secureflow.dev.yaml --password "$DEV_PASS"
 ```
 
-This helps ensure your sensitive files never end up in plaintext in version control.
+---
+
+## 🧩 Project Structure
+
+```
+secureflow-go/
+│
+├── cmd/                    # CLI commands (Cobra)
+│   ├── root.go            # Root command and global flags
+│   ├── encrypt.go         # Encryption command
+│   ├── decrypt.go         # Decryption command
+│   ├── test.go            # Test decryption command
+│   └── init.go            # Initialize config command
+│
+├── internal/              # Internal packages
+│   ├── crypto/           # Encryption/decryption logic
+│   ├── config/           # Configuration handling
+│   └── utils/            # Utilities (file ops, logging)
+│
+├── docs/                 # Comprehensive documentation
+│   ├── configuration.md  # Configuration guide
+│   ├── cicd-usage.md    # CI/CD integration guide
+│   ├── security.md      # Security best practices
+│   └── troubleshooting.md # Troubleshooting guide
+│
+├── examples/             # Usage examples
+│   ├── README.md        # Practical examples
+│   └── configs.md       # Sample configurations
+│
+├── main.go              # Application entry point
+├── install.sh           # Installation script
+├── go.mod               # Go module definition
+├── LICENSE              # MIT License
+└── README.md            # This file
+```
 
 ---
 
 ## 🧱 Error Handling
 
-* **Missing files** → Skipped with warning, process continues
-* **Wrong password** → Graceful failure with exit code `1`
-* **Malformed YAML** → Detailed message showing offending line
-* **Output directory missing** → Automatically created
-* **Interrupts (Ctrl+C)** → Gracefully exits with cleanup notice
+SecureFlow provides clear, actionable error messages:
 
----
-
-## 🔐 Security Model
-
-* Encryption: AES-256-CBC with PBKDF2 key derivation (OpenSSL-compatible)
-* Passwords are never stored or logged
-* Non-interactive password injection supported for CI/CD pipelines
-* Compatible with encrypted artefacts from the earlier Bash version
-
----
-
-## 🧩 Project Structure (Go)
-
-```
-secureflow/
-│
-├── cmd/
-│   ├── root.go          # CLI entrypoint (Cobra)
-│   ├── encrypt.go
-│   ├── decrypt.go
-│   ├── test.go
-│   └── init.go
-│
-├── internal/
-│   ├── crypto/          # Encryption/decryption logic
-│   ├── config/          # secureflow.yaml handling
-│   └── utils/           # File handling, error logging
-│
-├── go.mod
-├── main.go
-├── LICENSE                 # MIT License
-├── install.sh              # Installation script
-├── examples/               # Usage examples and configs
-└── README.md
-```
-
----
-
-## 📚 Examples
-
-Check out the [examples directory](./examples/README.md) for:
-- Practical usage examples
-- CI/CD integration guides (GitHub Actions, GitLab CI, Bitbucket Pipelines)
-- Sample configuration files for different use cases
-- Best practices and troubleshooting
+- **Missing files** → Warns and skips, continues with other files
+- **Wrong password** → Clear error message with exit code 1
+- **Invalid YAML** → Shows line number and syntax error
+- **Missing directories** → Automatically creates them
+- **Interrupts (Ctrl+C)** → Graceful exit with cleanup notice
 
 ---
 
 ## 🧪 Development
 
-Run locally without installing:
+### Run Locally
 
 ```bash
 go run main.go encrypt
+go run main.go decrypt
+go run main.go test
+go run main.go init
 ```
 
-Run all tests:
+### Run Tests
 
 ```bash
 go test ./...
 ```
 
-Build binary:
+With verbose output:
+
+```bash
+go test ./... -v
+```
+
+### Build Binary
 
 ```bash
 go build -o secureflow
 ```
 
+Cross-compile for different platforms:
+
+```bash
+# Linux AMD64
+GOOS=linux GOARCH=amd64 go build -o secureflow-linux-amd64
+
+# macOS Intel
+GOOS=darwin GOARCH=amd64 go build -o secureflow-darwin-amd64
+
+# macOS Apple Silicon
+GOOS=darwin GOARCH=arm64 go build -o secureflow-darwin-arm64
+
+# Windows
+GOOS=windows GOARCH=amd64 go build -o secureflow-windows-amd64.exe
+```
+
 ---
 
-## 🧭 Future Roadmap
+## 🧭 Roadmap
 
-* Support for `.env` key filtering (only encrypt certain variables)
-* Optional GPG-based encryption backend
-* Integration with Flutter build runners
-* Progress bars for large files
+Future enhancements we're considering:
+
+- [ ] Support for `.env` key filtering (only encrypt certain variables)
+- [ ] Optional GPG-based encryption backend
+- [ ] Progress bars for large files
+- [ ] Batch re-encryption command
+- [ ] Integration with Flutter build runners
+- [ ] Support for multiple encryption backends
+- [ ] Vault/secret manager integration
+- [ ] Shell completion scripts
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Here's how you can help:
+
+1. **Fork the repository**
+2. **Create a feature branch**: `git checkout -b feature/AmazingFeature`
+3. **Make your changes**
+4. **Run tests**: `go test ./...`
+5. **Commit your changes**: `git commit -m 'Add some AmazingFeature'`
+6. **Push to the branch**: `git push origin feature/AmazingFeature`
+7. **Open a Pull Request**
+
+### Development Guidelines
+
+- Follow Go best practices and conventions
+- Add tests for new features
+- Update documentation as needed
+- Keep commits focused and descriptive
+- Ensure all tests pass before submitting PR
 
 ---
 
@@ -312,23 +611,35 @@ Copyright (c) 2025 [MayR Labs](https://mayrlabs.com)
 
 ---
 
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
-
 ## 🔗 Links
 
-- [GitHub Repository](https://github.com/MayR-Labs/secureflow-go)
-- [Latest Releases](https://github.com/MayR-Labs/secureflow-go/releases)
-- [MayR Labs](https://mayrlabs.com)
-- [Report Issues](https://github.com/MayR-Labs/secureflow-go/issues)
+- **[GitHub Repository](https://github.com/MayR-Labs/secureflow-go)** - Source code and issues
+- **[Latest Releases](https://github.com/MayR-Labs/secureflow-go/releases)** - Download binaries
+- **[Documentation](./docs/)** - Comprehensive guides
+- **[Examples](./examples/)** - Practical usage examples
+- **[MayR Labs](https://mayrlabs.com)** - Our website
+- **[Report Issues](https://github.com/MayR-Labs/secureflow-go/issues)** - Bug reports and feature requests
 
 ---
+
+## 🙏 Acknowledgments
+
+SecureFlow is built with these excellent libraries:
+
+- [Cobra](https://github.com/spf13/cobra) - CLI framework
+- [yaml.v3](https://gopkg.in/yaml.v3) - YAML parsing
+- Go standard library - Crypto, file I/O, and more
+
+Special thanks to all contributors and users who help make SecureFlow better!
+
+---
+
+## ⭐ Star Us!
+
+If you find SecureFlow useful, please consider giving us a star on GitHub! It helps others discover the project.
+
+[![GitHub stars](https://img.shields.io/github/stars/MayR-Labs/secureflow-go?style=social)](https://github.com/MayR-Labs/secureflow-go/stargazers)
+
+---
+
+**Made with ❤️ by [MayR Labs](https://mayrlabs.com)**
