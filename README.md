@@ -19,24 +19,60 @@ It’s designed to replace fragile Bash scripts with a fast, cross-platform exec
 
 ## 🚀 Installation
 
+### Quick Install (Linux/macOS)
+
+Use the installation script for the easiest setup:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash
+```
+
+Or with wget:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash
+```
+
+### Manual Installation
+
+#### From Release (recommended)
+
+Download the precompiled binary for your OS from the [Releases](https://github.com/MayR-Labs/secureflow-go/releases) page.
+
+**Linux (AMD64):**
+```bash
+wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-linux-amd64
+chmod +x secureflow-linux-amd64
+sudo mv secureflow-linux-amd64 /usr/local/bin/secureflow
+```
+
+**macOS (Intel):**
+```bash
+wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-darwin-amd64
+chmod +x secureflow-darwin-amd64
+sudo mv secureflow-darwin-amd64 /usr/local/bin/secureflow
+```
+
+**macOS (Apple Silicon):**
+```bash
+wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-darwin-arm64
+chmod +x secureflow-darwin-arm64
+sudo mv secureflow-darwin-arm64 /usr/local/bin/secureflow
+```
+
+**Windows:**
+Download `secureflow-windows-amd64.exe` from the [Releases](https://github.com/MayR-Labs/secureflow-go/releases) page and add it to your PATH.
+
 ### From Source
 
 ```bash
-git clone https://github.com/YoungMayor/secureflow-go.git
-cd secureflow
+git clone https://github.com/MayR-Labs/secureflow-go.git
+cd secureflow-go
 go build -o secureflow
-```
-
-### From Release (recommended)
-
-Download the precompiled binary for your OS from the [Releases](https://github.com/YoungMayor/secureflow-go/releases) page,
-then move it to a directory in your PATH, for example:
-
-```bash
 sudo mv secureflow /usr/local/bin/
 ```
 
-Check installation:
+### Verify Installation
 
 ```bash
 secureflow --version
@@ -219,8 +255,21 @@ secureflow/
 │
 ├── go.mod
 ├── main.go
+├── LICENSE                 # MIT License
+├── install.sh              # Installation script
+├── examples/               # Usage examples and configs
 └── README.md
 ```
+
+---
+
+## 📚 Examples
+
+Check out the [examples directory](./examples/README.md) for:
+- Practical usage examples
+- CI/CD integration guides (GitHub Actions, GitLab CI, Bitbucket Pipelines)
+- Sample configuration files for different use cases
+- Best practices and troubleshooting
 
 ---
 
@@ -252,5 +301,34 @@ go build -o secureflow
 * Optional GPG-based encryption backend
 * Integration with Flutter build runners
 * Progress bars for large files
+
+---
+
+## 📄 License
+
+SecureFlow is licensed under the [MIT License](LICENSE).
+
+Copyright (c) 2025 [MayR Labs](https://mayrlabs.com)
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+---
+
+## 🔗 Links
+
+- [GitHub Repository](https://github.com/MayR-Labs/secureflow-go)
+- [Latest Releases](https://github.com/MayR-Labs/secureflow-go/releases)
+- [MayR Labs](https://mayrlabs.com)
+- [Report Issues](https://github.com/MayR-Labs/secureflow-go/issues)
 
 ---
