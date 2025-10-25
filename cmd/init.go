@@ -55,7 +55,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Determine which template to use
 	var cfg *config.Config
-	
+
 	if templateName != "" {
 		// Template provided via flag
 		cfg = config.TemplateConfig(templateName)
@@ -71,17 +71,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("  6. Kubernetes (K8s)")
 		fmt.Println("  7. Microservices")
 		fmt.Println()
-		
+
 		choice, err := utils.ReadLine("Enter your choice (1-7) [1]: ")
 		if err != nil {
 			return err
 		}
-		
+
 		// Default to 1 if empty
 		if choice == "" {
 			choice = "1"
 		}
-		
+
 		switch choice {
 		case "1":
 			cfg = config.DefaultConfig()
@@ -108,7 +108,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			cfg = config.DefaultConfig()
 			templateName = "default"
 		}
-		
+
 		fmt.Printf("%s 📝 Using %s template\n\n", utils.ColorBlue, templateName)
 	} else {
 		// Non-interactive mode, use default
