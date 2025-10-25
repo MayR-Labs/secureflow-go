@@ -1,4 +1,4 @@
-module github.com/YoungMayor/secureflow-go
+module github.com/MayR-Labs/secureflow-go
 
 go 1.24.0
 

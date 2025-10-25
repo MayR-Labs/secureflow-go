@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/YoungMayor/secureflow-go/internal/config"
-	"github.com/YoungMayor/secureflow-go/internal/crypto"
-	"github.com/YoungMayor/secureflow-go/internal/utils"
+	"github.com/MayR-Labs/secureflow-go/internal/config"
+	"github.com/MayR-Labs/secureflow-go/internal/crypto"
+	"github.com/MayR-Labs/secureflow-go/internal/utils"
 	"github.com/spf13/cobra"
 )
 
