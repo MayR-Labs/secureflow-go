@@ -400,7 +400,7 @@ Error: yaml: line 5: mapping values are not allowed in this context
 
 **Solution**:
 - Check YAML syntax (proper indentation, colons, dashes)
-- Validate YAML at [yamllint.com](http://www.yamllint.com/)
+- Validate YAML at [yamllint.com](https://www.yamllint.com/)
 - Ensure proper spacing after colons
 
 ## See Also

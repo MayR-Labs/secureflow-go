@@ -28,7 +28,7 @@
 - [CI/CD Integration](#-cicd-integration)
 - [Documentation](#-documentation)
 - [Security](#-security)
-- [Examples](#-examples)
+- [Common Use Cases](#-common-use-cases)
 - [Contributing](#-contributing)
 
 ---
