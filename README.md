@@ -19,9 +19,13 @@ It’s designed to replace fragile Bash scripts with a fast, cross-platform exec
 
 ## 🚀 Installation
 
-### Quick Install (Linux/macOS)
+SecureFlow can be installed **locally** (recommended) or **globally**.
 
-Use the installation script for the easiest setup:
+### Local Installation (Recommended)
+
+Install SecureFlow in your project directory. This allows team members and CI/CD pipelines to use the executable without needing global installation.
+
+#### Quick Install (Linux/macOS)
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash
@@ -33,11 +37,49 @@ Or with wget:
 wget -qO- https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash
 ```
 
-### Manual Installation
+This downloads the `secureflow` binary to your current directory. You can then:
 
-#### From Release (recommended)
+1. Run it with `./secureflow`
+2. Commit it to your repository (optional but recommended for team workflows)
+3. Add it to `.gitignore` if you prefer team members to install it individually
+
+#### Manual Local Installation
 
 Download the precompiled binary for your OS from the [Releases](https://github.com/MayR-Labs/secureflow-go/releases) page.
+
+**Linux (AMD64):**
+```bash
+wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-linux-amd64
+chmod +x secureflow-linux-amd64
+mv secureflow-linux-amd64 secureflow
+```
+
+**macOS (Intel):**
+```bash
+wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-darwin-amd64
+chmod +x secureflow-darwin-amd64
+mv secureflow-darwin-amd64 secureflow
+```
+
+**macOS (Apple Silicon):**
+```bash
+wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-darwin-arm64
+chmod +x secureflow-darwin-arm64
+mv secureflow-darwin-arm64 secureflow
+```
+
+**Windows:**
+Download `secureflow-windows-amd64.exe` from the [Releases](https://github.com/MayR-Labs/secureflow-go/releases) page and rename it to `secureflow.exe` in your project directory.
+
+### Global Installation
+
+If you prefer to install SecureFlow globally (available system-wide):
+
+```bash
+curl -sSL https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash -s -- --global
+```
+
+Or manually:
 
 **Linux (AMD64):**
 ```bash
@@ -69,11 +111,17 @@ Download `secureflow-windows-amd64.exe` from the [Releases](https://github.com/M
 git clone https://github.com/MayR-Labs/secureflow-go.git
 cd secureflow-go
 go build -o secureflow
-sudo mv secureflow /usr/local/bin/
+# For global install: sudo mv secureflow /usr/local/bin/
 ```
 
 ### Verify Installation
 
+**Local installation:**
+```bash
+./secureflow --version
+```
+
+**Global installation:**
 ```bash
 secureflow --version
 ```
@@ -82,8 +130,16 @@ secureflow --version
 
 ## 🧰 Usage
 
+> **Note:** If you installed SecureFlow locally, prefix all commands with `./` (e.g., `./secureflow init`). For global installations, use `secureflow` directly.
+
 ### 1. Initialise a new config
 
+**Local installation:**
+```bash
+./secureflow init
+```
+
+**Global installation:**
 ```bash
 secureflow init
 ```
@@ -138,6 +194,12 @@ All encrypted files will be saved to the directory specified in the YAML file (d
 
 Decrypt files for local development or CI pipelines:
 
+**Local installation:**
+```bash
+./secureflow decrypt --password "your_password"
+```
+
+**Global installation:**
 ```bash
 secureflow decrypt --password "your_password"
 ```
@@ -145,13 +207,13 @@ secureflow decrypt --password "your_password"
 For non-interactive mode:
 
 ```bash
-secureflow decrypt --password "$ENCRYPTION_PASSWORD" --non-interactive
+./secureflow decrypt --password "$ENCRYPTION_PASSWORD" --non-interactive
 ```
 
 To use a custom config:
 
 ```bash
-secureflow decrypt --config ./custom/secureflow.yaml
+./secureflow decrypt --config ./custom/secureflow.yaml
 ```
 
 ---
@@ -160,6 +222,12 @@ secureflow decrypt --config ./custom/secureflow.yaml
 
 This mode decrypts files into a separate test directory without overwriting existing secrets.
 
+**Local installation:**
+```bash
+./secureflow test
+```
+
+**Global installation:**
 ```bash
 secureflow test
 ```
@@ -167,7 +235,7 @@ secureflow test
 Non-interactive version:
 
 ```bash
-secureflow test --password "your_password" --non-interactive
+./secureflow test --password "your_password" --non-interactive
 ```
 
 ---
@@ -200,17 +268,86 @@ Last Modified:  2025-10-22 11:24:09
 
 ### CI/CD Decryption Step
 
-In GitHub Actions, for example:
+#### With Local Executable (Recommended)
 
+If you commit the `secureflow` binary to your repository, CI/CD pipelines can use it directly:
+
+**GitHub Actions:**
 ```yaml
+- name: Make secureflow executable
+  run: chmod +x ./secureflow
+
 - name: Decrypt secrets
-  run: secureflow decrypt --password ${{ secrets.SECUREFLOW_PASSWORD }} --non-interactive
+  run: ./secureflow decrypt --password ${{ secrets.SECUREFLOW_PASSWORD }} --non-interactive
+```
+
+**GitLab CI:**
+```yaml
+decrypt_secrets:
+  script:
+    - chmod +x ./secureflow
+    - ./secureflow decrypt --password "$SECUREFLOW_PASSWORD" --non-interactive
+```
+
+#### Without Committed Binary
+
+If you prefer not to commit the binary, download it during CI/CD:
+
+**GitHub Actions:**
+```yaml
+- name: Download SecureFlow
+  run: |
+    wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-linux-amd64
+    chmod +x secureflow-linux-amd64
+    mv secureflow-linux-amd64 secureflow
+
+- name: Decrypt secrets
+  run: ./secureflow decrypt --password ${{ secrets.SECUREFLOW_PASSWORD }} --non-interactive
+```
+
+**GitLab CI:**
+```yaml
+before_script:
+  - wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-linux-amd64
+  - chmod +x secureflow-linux-amd64
+  - mv secureflow-linux-amd64 secureflow
+
+decrypt_secrets:
+  script:
+    - ./secureflow decrypt --password "$SECUREFLOW_PASSWORD" --non-interactive
+```
+
+### Local Development Workflow
+
+**Initial setup:**
+```bash
+# Install SecureFlow locally in your project
+curl -sSL https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash
+
+# Initialize configuration
+./secureflow init
+
+# Encrypt your sensitive files
+./secureflow encrypt
+```
+
+**Team member cloning the repository:**
+```bash
+git clone https://github.com/yourorg/your-project.git
+cd your-project
+
+# If secureflow is committed, just decrypt
+./secureflow decrypt
+
+# If secureflow is not committed, install it first
+curl -sSL https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash
+./secureflow decrypt
 ```
 
 ### Local Encryption
 
 ```bash
-secureflow encrypt
+./secureflow encrypt
 ```
 
 This helps ensure your sensitive files never end up in plaintext in version control.

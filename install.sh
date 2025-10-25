@@ -2,7 +2,9 @@
 
 # SecureFlow Installation Script
 # This script installs the latest version of SecureFlow CLI
-# Usage: curl -sSL https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash
+# Usage: 
+#   Local install:  curl -sSL https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash
+#   Global install: curl -sSL https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash -s -- --global
 
 set -e
 
@@ -13,8 +15,23 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Parse command line arguments
+GLOBAL_INSTALL=false
+for arg in "$@"; do
+    case $arg in
+        --global)
+            GLOBAL_INSTALL=true
+            shift
+            ;;
+    esac
+done
+
 # Default installation directory
-INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+if [ "$GLOBAL_INSTALL" = true ]; then
+    INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+else
+    INSTALL_DIR="$(pwd)"
+fi
 
 # GitHub repository
 REPO="MayR-Labs/secureflow-go"
@@ -22,6 +39,11 @@ BINARY_NAME="secureflow"
 
 echo -e "${BLUE}SecureFlow CLI Installer${NC}"
 echo "========================="
+if [ "$GLOBAL_INSTALL" = true ]; then
+    echo -e "${BLUE}Mode:${NC} Global installation"
+else
+    echo -e "${BLUE}Mode:${NC} Local installation (current directory)"
+fi
 echo ""
 
 # Detect OS and architecture
@@ -124,8 +146,8 @@ install_binary() {
         INSTALL_PATH="${INSTALL_DIR}/${BINARY_NAME}"
     fi
     
-    # Check if we need sudo
-    if [ ! -w "$INSTALL_DIR" ]; then
+    # Check if we need sudo (only for global install)
+    if [ "$GLOBAL_INSTALL" = true ] && [ ! -w "$INSTALL_DIR" ]; then
         echo -e "${YELLOW}→${NC} Installing to ${INSTALL_PATH} (requires sudo)..."
         sudo mv "${TMP_FILE}" "${INSTALL_PATH}"
     else
@@ -144,22 +166,46 @@ verify_installation() {
     echo ""
     echo -e "${BLUE}→${NC} Verifying installation..."
     
-    if command -v "${BINARY_NAME}" >/dev/null 2>&1; then
-        VERSION_OUTPUT=$("${BINARY_NAME}" --version 2>&1 || echo "")
-        echo -e "${GREEN}✓${NC} SecureFlow is installed and ready to use!"
-        echo ""
-        echo "Version: ${VERSION_OUTPUT}"
-        echo ""
-        echo "Usage:"
-        echo "  secureflow init       # Initialize configuration"
-        echo "  secureflow encrypt    # Encrypt files"
-        echo "  secureflow decrypt    # Decrypt files"
-        echo "  secureflow --help     # Show help"
-        echo ""
-        echo -e "For more information, visit: ${BLUE}https://github.com/${REPO}${NC}"
+    if [ "$GLOBAL_INSTALL" = true ]; then
+        if command -v "${BINARY_NAME}" >/dev/null 2>&1; then
+            VERSION_OUTPUT=$("${BINARY_NAME}" --version 2>&1 || echo "")
+            echo -e "${GREEN}✓${NC} SecureFlow is installed globally and ready to use!"
+            echo ""
+            echo "Version: ${VERSION_OUTPUT}"
+            echo ""
+            echo "Usage:"
+            echo "  secureflow init       # Initialize configuration"
+            echo "  secureflow encrypt    # Encrypt files"
+            echo "  secureflow decrypt    # Decrypt files"
+            echo "  secureflow --help     # Show help"
+            echo ""
+            echo -e "For more information, visit: ${BLUE}https://github.com/${REPO}${NC}"
+        else
+            echo -e "${YELLOW}⚠${NC}  Installation complete, but ${BINARY_NAME} is not in your PATH"
+            echo "   You may need to add ${INSTALL_DIR} to your PATH or restart your shell"
+        fi
     else
-        echo -e "${YELLOW}⚠${NC}  Installation complete, but ${BINARY_NAME} is not in your PATH"
-        echo "   You may need to add ${INSTALL_DIR} to your PATH or restart your shell"
+        # Local installation
+        if [ -f "${INSTALL_PATH}" ]; then
+            VERSION_OUTPUT=$("${INSTALL_PATH}" --version 2>&1 || echo "")
+            echo -e "${GREEN}✓${NC} SecureFlow is installed locally and ready to use!"
+            echo ""
+            echo "Version: ${VERSION_OUTPUT}"
+            echo ""
+            echo "Installed at: ${INSTALL_PATH}"
+            echo ""
+            echo "Usage:"
+            echo "  ./secureflow init       # Initialize configuration"
+            echo "  ./secureflow encrypt    # Encrypt files"
+            echo "  ./secureflow decrypt    # Decrypt files"
+            echo "  ./secureflow --help     # Show help"
+            echo ""
+            echo -e "${YELLOW}Note:${NC} For global installation, run: curl -sSL https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash -s -- --global"
+            echo ""
+            echo -e "For more information, visit: ${BLUE}https://github.com/${REPO}${NC}"
+        else
+            echo -e "${RED}✗${NC} Installation failed: ${INSTALL_PATH} not found"
+        fi
     fi
 }
 

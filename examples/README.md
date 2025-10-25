@@ -1,34 +1,37 @@
 # SecureFlow Examples
 
-This directory contains practical examples of using SecureFlow CLI.
+This directory contains practical examples of using SecureFlow CLI with **local installation** (recommended) and global installation.
 
 ## Basic Usage Examples
 
 ### 1. Encrypting Environment Variables
 
 ```bash
+# Install SecureFlow locally (downloads to current directory)
+curl -sSL https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash
+
 # Initialize configuration
-secureflow init
+./secureflow init
 
 # Encrypt files with interactive mode
-secureflow encrypt
+./secureflow encrypt
 # You'll be prompted for:
 # - Encryption password
 # - Password hint (optional)
 # - Note (optional)
 
 # Non-interactive mode (for CI/CD)
-secureflow encrypt --password "your_strong_password" --non-interactive
+./secureflow encrypt --password "your_strong_password" --non-interactive
 ```
 
 ### 2. Decrypting for Local Development
 
 ```bash
 # Interactive mode
-secureflow decrypt
+./secureflow decrypt
 
 # Non-interactive mode
-secureflow decrypt --password "your_strong_password" --non-interactive
+./secureflow decrypt --password "your_strong_password" --non-interactive
 ```
 
 ### 3. Testing Decryption
@@ -37,10 +40,10 @@ Test decryption without overwriting your working files:
 
 ```bash
 # Interactive mode
-secureflow test
+./secureflow test
 
 # Non-interactive mode
-secureflow test --password "your_password" --non-interactive
+./secureflow test --password "your_password" --non-interactive
 ```
 
 ## Advanced Examples
@@ -65,13 +68,39 @@ files:
 Use it:
 
 ```bash
-secureflow encrypt --config /path/to/custom/secureflow.yaml
-secureflow decrypt --config /path/to/custom/secureflow.yaml
+./secureflow encrypt --config /path/to/custom/secureflow.yaml
+./secureflow decrypt --config /path/to/custom/secureflow.yaml
 ```
 
 ### GitHub Actions Integration
 
-`.github/workflows/deploy.yml`:
+`.github/workflows/deploy.yml` (with committed binary):
+
+```yaml
+name: Deploy
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Make secureflow executable
+        run: chmod +x ./secureflow
+      
+      - name: Decrypt secrets
+        run: ./secureflow decrypt --password "${{ secrets.SECUREFLOW_PASSWORD }}" --non-interactive
+        
+      - name: Deploy application
+        run: |
+          # Your deployment commands here
+          echo "Deploying with decrypted secrets..."
+```
+
+`.github/workflows/deploy.yml` (download binary during CI):
 
 ```yaml
 name: Deploy
@@ -89,11 +118,10 @@ jobs:
         run: |
           wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-linux-amd64
           chmod +x secureflow-linux-amd64
-          sudo mv secureflow-linux-amd64 /usr/local/bin/secureflow
+          mv secureflow-linux-amd64 secureflow
       
       - name: Decrypt secrets
-        run: |
-          secureflow decrypt --password "${{ secrets.SECUREFLOW_PASSWORD }}" --non-interactive
+        run: ./secureflow decrypt --password "${{ secrets.SECUREFLOW_PASSWORD }}" --non-interactive
         
       - name: Deploy application
         run: |
@@ -103,7 +131,33 @@ jobs:
 
 ### GitLab CI Integration
 
-`.gitlab-ci.yml`:
+`.gitlab-ci.yml` (with committed binary):
+
+```yaml
+stages:
+  - decrypt
+  - deploy
+
+decrypt_secrets:
+  stage: decrypt
+  script:
+    - chmod +x ./secureflow
+    - ./secureflow decrypt --password "$SECUREFLOW_PASSWORD" --non-interactive
+  artifacts:
+    paths:
+      - .env.prod
+      - android/app/keystore.jks
+    expire_in: 1 hour
+
+deploy:
+  stage: deploy
+  dependencies:
+    - decrypt_secrets
+  script:
+    - echo "Deploying with decrypted secrets..."
+```
+
+`.gitlab-ci.yml` (download binary during CI):
 
 ```yaml
 stages:
@@ -115,9 +169,9 @@ decrypt_secrets:
   before_script:
     - wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-linux-amd64
     - chmod +x secureflow-linux-amd64
-    - mv secureflow-linux-amd64 /usr/local/bin/secureflow
+    - mv secureflow-linux-amd64 secureflow
   script:
-    - secureflow decrypt --password "$SECUREFLOW_PASSWORD" --non-interactive
+    - ./secureflow decrypt --password "$SECUREFLOW_PASSWORD" --non-interactive
   artifacts:
     paths:
       - .env.prod
@@ -144,8 +198,8 @@ pipelines:
         script:
           - wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-linux-amd64
           - chmod +x secureflow-linux-amd64
-          - mv secureflow-linux-amd64 /usr/local/bin/secureflow
-          - secureflow decrypt --password "$SECUREFLOW_PASSWORD" --non-interactive
+          - mv secureflow-linux-amd64 secureflow
+          - ./secureflow decrypt --password "$SECUREFLOW_PASSWORD" --non-interactive
           - echo "Deploying..."
 ```
 
@@ -153,13 +207,18 @@ pipelines:
 
 ### Setting Up a New Project
 
-1. **Initialize SecureFlow**:
+1. **Install SecureFlow locally**:
 ```bash
 cd /path/to/your/project
-secureflow init
+curl -sSL https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash
 ```
 
-2. **Edit the generated `secureflow.yaml`** to match your files:
+2. **Initialize SecureFlow**:
+```bash
+./secureflow init
+```
+
+3. **Edit the generated `secureflow.yaml`** to match your files:
 ```yaml
 output_dir: enc_keys
 test_output_dir: test_dec_keys
@@ -171,21 +230,22 @@ files:
     output: database.yml.encrypted
 ```
 
-3. **Encrypt your sensitive files**:
+4. **Encrypt your sensitive files**:
 ```bash
-secureflow encrypt
+./secureflow encrypt
 # Enter a strong password and optional hint
 ```
 
-4. **Commit encrypted files to version control**:
+5. **Commit encrypted files (and optionally the binary) to version control**:
 ```bash
 git add enc_keys/
 git add secureflow.yaml
-git commit -m "Add encrypted secrets"
+git add secureflow  # Optional: commit the binary for easy team setup
+git commit -m "Add encrypted secrets and SecureFlow"
 git push
 ```
 
-5. **Add `.env.production` and other sensitive files to `.gitignore`**:
+6. **Add `.env.production` and other sensitive files to `.gitignore`**:
 ```
 # .gitignore
 .env.production
@@ -203,19 +263,24 @@ git clone https://github.com/yourorg/your-project.git
 cd your-project
 ```
 
-2. **Install SecureFlow** (if not already installed):
-```bash
-# On Linux/macOS
-wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-linux-amd64
-chmod +x secureflow-linux-amd64
-sudo mv secureflow-linux-amd64 /usr/local/bin/secureflow
-```
+2. **Decrypt secrets**:
 
-3. **Decrypt secrets** (obtain password from team):
-```bash
-secureflow decrypt
-# Enter the password provided by your team
-```
+   **If `secureflow` binary is committed:**
+   ```bash
+   chmod +x ./secureflow
+   ./secureflow decrypt
+   # Enter the password provided by your team
+   ```
+
+   **If `secureflow` binary is NOT committed:**
+   ```bash
+   # Install SecureFlow locally
+   curl -sSL https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash
+   
+   # Decrypt
+   ./secureflow decrypt
+   # Enter the password provided by your team
+   ```
 
 ### CI/CD Setup
 
@@ -224,15 +289,20 @@ secureflow decrypt
    - GitLab CI: Settings → CI/CD → Variables
    - Bitbucket: Repository settings → Pipelines → Repository variables
 
-2. **Add SecureFlow to your pipeline** (see integration examples above)
+2. **Choose your approach**:
+   - **Option A (Recommended):** Commit the `secureflow` binary to your repo for immediate availability
+   - **Option B:** Download the binary during CI/CD (see integration examples above)
 
-3. **Use decrypted files** in subsequent pipeline steps
+3. **Add SecureFlow to your pipeline** (see integration examples above)
+
+4. **Use decrypted files** in subsequent pipeline steps
 
 ## Example Project Structure
 
 ```
 your-project/
 ├── .gitignore
+├── secureflow                   # SecureFlow binary (optional, can be committed)
 ├── secureflow.yaml
 ├── enc_keys/                    # Encrypted files (committed to git)
 │   ├── .env.production.encrypted
