@@ -37,11 +37,18 @@ Or with wget:
 wget -qO- https://raw.githubusercontent.com/MayR-Labs/secureflow-go/main/install.sh | bash
 ```
 
-This downloads the `secureflow` binary to your current directory. You can then:
+This downloads the `secureflow` binary to your current directory. 
+
+**Should you commit the binary to your repository?**
+
+- **✅ Recommended:** Commit it for easy team onboarding and CI/CD. Team members can use it immediately after cloning.
+- **Alternative:** Add it to `.gitignore` if you prefer each developer to install it separately.
+
+You can then:
 
 1. Run it with `./secureflow`
-2. Commit it to your repository (optional but recommended for team workflows)
-3. Add it to `.gitignore` if you prefer team members to install it individually
+2. Commit it to your repository: `git add secureflow && git commit -m "Add SecureFlow binary"`
+3. Or add it to `.gitignore` if you prefer: `echo "secureflow" >> .gitignore`
 
 #### Manual Local Installation
 
