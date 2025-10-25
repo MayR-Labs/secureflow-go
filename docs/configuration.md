@@ -46,7 +46,7 @@ files:
 
 ### File Entries
 
-Each file entry in the `files` array requires two fields and supports one optional field:
+Each file entry in the `files` array requires the `input` and `output` fields, and optionally supports the `copy_to` field:
 
 #### `input`
 - **Type**: String
@@ -274,8 +274,8 @@ files:
 
 **Add to .gitignore:**
 ```
-.env       # The copied file
-.env.prod  # The original source
+.env       # The copied file (decrypted)
+# Note: .env.prod is your encrypted source, commit it to git
 ```
 
 ### 2. Naming Conventions
@@ -415,7 +415,7 @@ secureflow init --template microservices
 - **`default`** - React Native/Mobile app with Android/iOS files and `.env.prod` → `.env` copy
 - **`reactnative`** - React Native specific with staging and production environments
 - **`flutter`** - Flutter mobile app with Android and iOS configurations
-- **`web`** - Web application with multiple environment files and SSL certificates
+- **`web`** - Web application with multiple environment files and database/secrets configurations
 - **`docker`** - Docker deployment with compose and nginx configurations
 - **`k8s`** (or `kubernetes`) - Kubernetes secrets and configuration files
 - **`microservices`** - Multi-service architecture with per-service environment files
