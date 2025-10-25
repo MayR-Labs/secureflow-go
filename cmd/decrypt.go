@@ -76,7 +76,29 @@ func runDecrypt(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("decryption failed (wrong password?)")
 		}
 
-		fmt.Printf("%s ✅ %s decrypted successfully -> %s\n\n", utils.ColorGreen, encryptedPath, fileMapping.Input)
+		fmt.Printf("%s ✅ %s decrypted successfully -> %s\n", utils.ColorGreen, encryptedPath, fileMapping.Input)
+		
+		// Handle copy_to if specified
+		if fileMapping.CopyTo != "" {
+			// Ensure copy_to directory exists
+			copyToDir := filepath.Dir(fileMapping.CopyTo)
+			if copyToDir != "." && copyToDir != "" {
+				if err := utils.EnsureDir(copyToDir); err != nil {
+					fmt.Printf("%s ⚠️  Warning: Failed to create directory %s: %v\n", utils.ColorYellow, copyToDir, err)
+					fmt.Println()
+					continue
+				}
+			}
+			
+			// Copy the decrypted file to the copy_to location
+			if err := utils.CopyFile(fileMapping.Input, fileMapping.CopyTo); err != nil {
+				fmt.Printf("%s ⚠️  Warning: Failed to copy %s to %s: %v\n", utils.ColorYellow, fileMapping.Input, fileMapping.CopyTo, err)
+			} else {
+				fmt.Printf("%s 📋 Copied to %s\n", utils.ColorGreen, fileMapping.CopyTo)
+			}
+		}
+		
+		fmt.Println()
 		successCount++
 	}
 
