@@ -41,7 +41,7 @@ This downloads the `secureflow` binary to your current directory.
 
 **Should you commit the binary to your repository?**
 
-- **✅ Recommended:** Commit it for easy team onboarding and CI/CD. Team members can use it immediately after cloning.
+- **✅ Recommended:** Commit the binary for easy team onboarding and CI/CD. Team members can use it immediately after cloning.
 - **Alternative:** Add it to `.gitignore` if you prefer each developer to install it separately.
 
 You can then:

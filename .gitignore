@@ -62,8 +62,8 @@ coverage.txt
 
 # Local build output for Go modules
 # (if you build executables named after the module, ignore them)
-# Note: For projects using SecureFlow, you may want to commit the binary
-# by removing this line from your project's .gitignore
+# Note: Projects using SecureFlow may want to commit the binary
+# by removing this line from their project's .gitignore
 secureflow
 
 # SecureFlow generated files
