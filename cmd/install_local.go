@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -68,11 +69,16 @@ func runInstallLocal(cmd *cobra.Command, args []string) error {
 	fmt.Println("📥 Downloading platform-specific executables...")
 	fmt.Println()
 
-	baseURL := fmt.Sprintf("https://github.com/MayR-Labs/secureflow-go/releases/%s/download", version)
-	if version == "latest" {
-		baseURL = "https://github.com/MayR-Labs/secureflow-go/releases/latest/download"
+	baseURL := "https://github.com/MayR-Labs/secureflow-go/releases/latest/download"
+	if version != "latest" && version != "" {
+		// Add 'v' prefix for tag-based releases
+		if version[0] != 'v' {
+			version = "v" + version
+		}
+		baseURL = fmt.Sprintf("https://github.com/MayR-Labs/secureflow-go/releases/download/%s", version)
 	}
 
+	successCount := 0
 	for _, platform := range platforms {
 		binaryName := fmt.Sprintf("secureflow-%s-%s", platform.os, platform.arch)
 		if platform.os == "windows" {
@@ -96,7 +102,16 @@ func runInstallLocal(cmd *cobra.Command, args []string) error {
 		}
 
 		fmt.Printf("  ✅ Downloaded %s\n", binaryName)
+		successCount++
 	}
+
+	// Check if at least one binary was downloaded
+	if successCount == 0 {
+		return fmt.Errorf("failed to download any executables")
+	}
+
+	fmt.Println()
+	fmt.Printf("✅ Successfully downloaded %d platform executable(s)\n", successCount)
 
 	// Create secureflow.sh launcher script
 	fmt.Println()
@@ -123,6 +138,11 @@ func runInstallLocal(cmd *cobra.Command, args []string) error {
 
 // downloadFile downloads a file from a URL and saves it to the specified path
 func downloadFile(url, outputPath string) error {
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
 	// Create the output file
 	out, err := os.Create(outputPath)
 	if err != nil {
@@ -131,7 +151,7 @@ func downloadFile(url, outputPath string) error {
 	defer out.Close()
 
 	// Download the file
-	resp, err := http.Get(url)
+	resp, err := client.Get(url)
 	if err != nil {
 		return fmt.Errorf("failed to download: %w", err)
 	}

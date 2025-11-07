@@ -64,8 +64,10 @@ if [ ! -f "$BINARY_PATH" ]; then
     exit 1
 fi
 
-# Make sure binary is executable
-chmod +x "$BINARY_PATH" 2>/dev/null || true
+# Make sure binary is executable (ignore errors if already executable or permission denied)
+if [ ! -x "$BINARY_PATH" ]; then
+    chmod +x "$BINARY_PATH" 2>/dev/null || echo "Warning: Could not make binary executable" >&2
+fi
 
 # Run the binary with all arguments passed to this script
 exec "$BINARY_PATH" "$@"
