@@ -120,6 +120,52 @@ go build -o secureflow
 sudo mv secureflow /usr/local/bin/
 ```
 
+### Local Installation for CI/CD
+
+SecureFlow provides a convenient `install-local` command that sets up a portable installation without requiring system-wide installation. This is perfect for CI/CD pipelines where you can't or don't want to install binaries globally.
+
+```bash
+# Run this once to set up local installation
+secureflow install-local
+```
+
+This command will:
+- Download platform-specific executables (Linux, macOS, Windows) to `.secureflow/` directory
+- Create a `secureflow.sh` launcher script in the current directory
+- The launcher automatically detects your platform and runs the correct executable
+
+**Usage in CI/CD:**
+
+```bash
+# In your CI/CD pipeline
+./secureflow.sh decrypt --password "$SECUREFLOW_PASSWORD" --non-interactive
+./secureflow.sh encrypt --password "$SECUREFLOW_PASSWORD" --non-interactive
+```
+
+**Benefits:**
+- ✅ No system installation required
+- ✅ Works across different platforms automatically
+- ✅ Portable - commit `.secureflow/` and `secureflow.sh` to your repo
+- ✅ Perfect for CI/CD environments with restricted permissions
+
+**Example: Using in GitHub Actions**
+
+```yaml
+steps:
+  - uses: actions/checkout@v3
+  
+  # One-time setup (or commit the files to your repo)
+  - name: Setup SecureFlow locally
+    run: |
+      wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-linux-amd64
+      chmod +x secureflow-linux-amd64
+      ./secureflow-linux-amd64 install-local
+  
+  # Use the launcher script
+  - name: Decrypt secrets
+    run: ./secureflow.sh decrypt --password "${{ secrets.SECUREFLOW_PASSWORD }}" --non-interactive
+```
+
 ### Verify Installation
 
 ```bash
@@ -241,9 +287,11 @@ secureflow test --password "your_password" --non-interactive
 
 ```bash
 secureflow --help
+secureflow init --help
 secureflow encrypt --help
 secureflow decrypt --help
 secureflow test --help
+secureflow install-local --help
 ```
 
 ---
@@ -314,7 +362,9 @@ See the [Configuration Guide](./docs/configuration.md) for detailed examples inc
 
 SecureFlow is designed to work seamlessly in CI/CD pipelines with its non-interactive mode.
 
-### Quick CI/CD Example (GitHub Actions)
+### Method 1: Local Installation (Recommended)
+
+The easiest approach for CI/CD is to use `install-local` which creates a portable installation:
 
 ```yaml
 name: Deploy
@@ -330,7 +380,51 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
-      # Install SecureFlow
+      # Setup SecureFlow locally (no sudo required)
+      - name: Setup SecureFlow
+        run: |
+          wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-linux-amd64
+          chmod +x secureflow-linux-amd64
+          ./secureflow-linux-amd64 install-local
+      
+      # Use the launcher script
+      - name: Decrypt secrets
+        run: |
+          ./secureflow.sh decrypt --password "${{ secrets.SECUREFLOW_PASSWORD }}" --non-interactive
+      
+      # Build and deploy
+      - name: Build & Deploy
+        run: |
+          npm run build
+          ./deploy.sh
+```
+
+**Alternative: Commit the local installation to your repo**
+
+You can also run `secureflow install-local` once and commit `.secureflow/` and `secureflow.sh` to your repository. Then your CI/CD simply uses:
+
+```yaml
+- name: Decrypt secrets
+  run: ./secureflow.sh decrypt --password "${{ secrets.SECUREFLOW_PASSWORD }}" --non-interactive
+```
+
+### Method 2: Global Installation
+
+```yaml
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      # Install SecureFlow globally
       - name: Install SecureFlow
         run: |
           wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-linux-amd64
@@ -479,12 +573,43 @@ secureflow decrypt
 
 ### CI/CD Deployment
 
-Add to your CI/CD pipeline (example: GitHub Actions):
+**Option 1: Using install-local (recommended)**
+
+```bash
+# One-time setup
+secureflow install-local
+
+# In your CI/CD pipeline
+./secureflow.sh decrypt --password ${{ secrets.SECUREFLOW_PASSWORD }} --non-interactive
+```
+
+**Option 2: Global installation**
 
 ```yaml
 - name: Decrypt secrets
   run: secureflow decrypt --password ${{ secrets.SECUREFLOW_PASSWORD }} --non-interactive
 ```
+
+### Portable CI/CD Setup
+
+For teams that want a fully portable solution, commit the local installation to your repo:
+
+```bash
+# One-time setup in your repository
+secureflow install-local
+git add .secureflow/ secureflow.sh
+git commit -m "Add portable SecureFlow installation"
+
+# Your CI/CD config becomes very simple:
+# - name: Decrypt secrets
+#   run: ./secureflow.sh decrypt --password "$PASSWORD" --non-interactive
+```
+
+This approach:
+- ✅ No installation step needed in CI/CD
+- ✅ Works across all platforms automatically
+- ✅ Consistent versions across all environments
+- ✅ Faster CI/CD runs (no download/install time)
 
 ### Team Onboarding
 
@@ -523,7 +648,9 @@ secureflow-go/
 │   ├── encrypt.go         # Encryption command
 │   ├── decrypt.go         # Decryption command
 │   ├── test.go            # Test decryption command
-│   └── init.go            # Initialize config command
+│   ├── init.go            # Initialize config command
+│   ├── install_local.go   # Local installation command
+│   └── secureflow.sh      # Launcher script template
 │
 ├── internal/              # Internal packages
 │   ├── crypto/           # Encryption/decryption logic
