@@ -35,7 +35,6 @@ coverage.out
 Thumbs.db
 
 # Editor directories and files
-.vscode/
 .idea/
 *.sublime-workspace
 *.sublime-project
@@ -69,5 +68,13 @@ enc_keys/
 test_dec_keys/
 secureflow.yaml
 
+# Local installation (optional - can be committed for portable CI/CD)
+# Uncomment these lines if you don't want to commit the local installation:
+# .secureflow/
+# secureflow.sh
+
 # End of file
 
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
