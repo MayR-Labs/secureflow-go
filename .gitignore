@@ -69,5 +69,10 @@ enc_keys/
 test_dec_keys/
 secureflow.yaml
 
+# Local installation (optional - can be committed for portable CI/CD)
+# Uncomment these lines if you don't want to commit the local installation:
+# .secureflow/
+# secureflow.sh
+
 # End of file
 
