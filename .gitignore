@@ -42,8 +42,6 @@ Thumbs.db
 *~
 
 # Environment files
-.env
-.env.*
 
 # Generated files
 # (uncomment patterns you want ignored for generated code)
@@ -75,6 +73,4 @@ secureflow.yaml
 
 # End of file
 
-branch_structure.json
-temp_auto_push.bat
-temp_interactive_push.bat
+config.bat
