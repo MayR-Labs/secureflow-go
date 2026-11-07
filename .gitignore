@@ -73,4 +73,6 @@ secureflow.yaml
 
 # End of file
 
-config.bat
+
+.env
+.env.*
