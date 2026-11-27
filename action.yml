@@ -1,0 +1,195 @@
+name: 'SecureFlow'
+description: 'Install SecureFlow and decrypt (or test/encrypt) the secrets listed in secureflow.yaml'
+author: 'MayR Labs'
+branding:
+  icon: 'lock'
+  color: 'blue'
+
+inputs:
+  password:
+    description: 'Encryption password. Pass it from a secret, e.g. secrets.SECUREFLOW_PASSWORD. Required unless command is "install".'
+    required: false
+  command:
+    description: 'What to run after installing: "decrypt" (default), "test", "encrypt" or "install" (install only, run nothing).'
+    required: false
+    default: 'decrypt'
+  config:
+    description: 'Path to the config file, relative to working-directory.'
+    required: false
+    default: 'secureflow.yaml'
+  working-directory:
+    description: 'Directory to run SecureFlow in.'
+    required: false
+    default: '.'
+  version:
+    description: 'SecureFlow release to install, e.g. "v1.3.0" or "latest". Defaults to the tag the action is pinned to (uses: ...@v1.3.0), otherwise latest.'
+    required: false
+    default: ''
+  args:
+    description: 'Extra arguments appended to the command.'
+    required: false
+    default: ''
+  verify-provenance:
+    description: 'Verify the binary was built by the SecureFlow release workflow (GitHub artifact attestation, needs the gh CLI). Releases before v1.3.0 have no attestation and fall back to checksum-only verification.'
+    required: false
+    default: 'true'
+  token:
+    description: 'Token used by gh to fetch attestations.'
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  version:
+    description: 'The SecureFlow version that was installed.'
+    value: ${{ steps.install.outputs.version }}
+  path:
+    description: 'Absolute path to the installed secureflow binary.'
+    value: ${{ steps.install.outputs.path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install SecureFlow
+      id: install
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
+        RUNNER_OS_NAME: ${{ runner.os }}
+        RUNNER_ARCH_NAME: ${{ runner.arch }}
+        VERIFY_PROVENANCE: ${{ inputs.verify-provenance }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+
+        # Resolve version: explicit input > tag the action is pinned to > latest
+        version="${INPUT_VERSION}"
+        if [ -z "$version" ]; then
+          if [[ "${ACTION_REF:-}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            version="$ACTION_REF"
+          else
+            version="latest"
+          fi
+        fi
+        if [ "$version" != "latest" ] && [[ "$version" != v* ]]; then
+          version="v$version"
+        fi
+        repo="MayR-Labs/secureflow-go"
+        if [ "$version" = "latest" ]; then
+          # Resolve to a concrete tag so the binary, checksums and attestation all match
+          latest_url="$(curl -fsSLI --retry 3 -o /dev/null -w '%{url_effective}' "https://github.com/${repo}/releases/latest")"
+          version="${latest_url##*/}"
+          if [[ "$version" != v* ]]; then
+            echo "::error::Could not resolve the latest SecureFlow release"; exit 1
+          fi
+        fi
+
+        case "$RUNNER_OS_NAME" in
+          Linux)   os=linux ;;
+          macOS)   os=darwin ;;
+          Windows) os=windows ;;
+          *) echo "::error::Unsupported runner OS: $RUNNER_OS_NAME"; exit 1 ;;
+        esac
+        case "$RUNNER_ARCH_NAME" in
+          X64)   arch=amd64 ;;
+          ARM64) arch=arm64 ;;
+          *) echo "::error::Unsupported runner architecture: $RUNNER_ARCH_NAME"; exit 1 ;;
+        esac
+        if [ "$os" = "windows" ] && [ "$arch" != "amd64" ]; then
+          echo "::error::SecureFlow only ships a windows-amd64 binary"; exit 1
+        fi
+
+        asset="secureflow-${os}-${arch}"
+        [ "$os" = "windows" ] && asset="${asset}.exe"
+
+        base="https://github.com/${repo}/releases/download/${version}"
+
+        install_dir="${RUNNER_TEMP}/secureflow/bin"
+        mkdir -p "$install_dir"
+        bin="secureflow"
+        [ "$os" = "windows" ] && bin="secureflow.exe"
+
+        echo "📥 Downloading ${asset} (${version})"
+        curl -fsSL --retry 3 -o "${install_dir}/${bin}" "${base}/${asset}"
+        curl -fsSL --retry 3 -o "${RUNNER_TEMP}/secureflow/checksums.txt" "${base}/checksums.txt"
+
+        # Verify the binary against the release checksums
+        expected="$(awk -v f="$asset" '$2 == f || $2 == "*"f { print $1 }' "${RUNNER_TEMP}/secureflow/checksums.txt")"
+        if [ -z "$expected" ]; then
+          echo "::error::No checksum found for ${asset} in checksums.txt"; exit 1
+        fi
+        if command -v sha256sum >/dev/null 2>&1; then
+          actual="$(sha256sum "${install_dir}/${bin}" | awk '{print $1}')"
+        else
+          actual="$(shasum -a 256 "${install_dir}/${bin}" | awk '{print $1}')"
+        fi
+        if [ "$expected" != "$actual" ]; then
+          echo "::error::Checksum mismatch for ${asset} (expected ${expected}, got ${actual})"; exit 1
+        fi
+        echo "🔒 Checksum verified"
+
+        # Provenance: prove the binary came from this repo's release workflow,
+        # not just that it matches a checksum file from the same release page.
+        if [ "$VERIFY_PROVENANCE" = "true" ]; then
+          # Is version >= v1.3.0? (pure bash; Windows' sort.exe has no -V)
+          IFS=. read -r vmaj vmin _ <<< "${version#v}"
+          vmin="${vmin%%-*}"
+          if [ "${vmaj:-0}" -gt 1 ] || { [ "${vmaj:-0}" -eq 1 ] && [ "${vmin:-0}" -ge 3 ]; }; then
+            if ! command -v gh >/dev/null 2>&1; then
+              echo "::error::gh CLI not found; install it or set verify-provenance: false"; exit 1
+            fi
+            gh attestation verify "${install_dir}/${bin}" \
+              --repo "$repo" \
+              --signer-workflow "${repo}/.github/workflows/release.yml"
+            echo "🛡️ Build provenance verified"
+          else
+            echo "::notice::SecureFlow ${version} predates build attestations; verified by checksum only"
+          fi
+        fi
+
+        chmod +x "${install_dir}/${bin}"
+
+        path_entry="$install_dir"
+        bin_path="${install_dir}/${bin}"
+        if [ "$os" = "windows" ]; then
+          path_entry="$(cygpath -w "$install_dir")"
+          bin_path="$(cygpath -w "$bin_path")"
+        fi
+        echo "$path_entry" >> "$GITHUB_PATH"
+
+        installed="$("${install_dir}/${bin}" --version | awk '{print $NF}')"
+        echo "✅ Installed SecureFlow ${installed}"
+        echo "version=${installed}" >> "$GITHUB_OUTPUT"
+        echo "path=${bin_path}" >> "$GITHUB_OUTPUT"
+
+    - name: Run SecureFlow ${{ inputs.command }}
+      if: inputs.command != 'install'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SECUREFLOW_PASSWORD: ${{ inputs.password }}
+        SF_COMMAND: ${{ inputs.command }}
+        SF_CONFIG: ${{ inputs.config }}
+        SF_ARGS: ${{ inputs.args }}
+      run: |
+        set -euo pipefail
+
+        case "$SF_COMMAND" in
+          decrypt|test|encrypt) ;;
+          *) echo "::error::Unknown command '$SF_COMMAND' (expected decrypt, test, encrypt or install)"; exit 1 ;;
+        esac
+
+        if [ -z "${SECUREFLOW_PASSWORD:-}" ]; then
+          echo "::error::The 'password' input is required for '$SF_COMMAND'. Pass it from a secret: password: \${{ secrets.SECUREFLOW_PASSWORD }}"
+          exit 1
+        fi
+        echo "::add-mask::${SECUREFLOW_PASSWORD}"
+
+        # --password is passed explicitly so older releases (without
+        # SECUREFLOW_PASSWORD support) work too. GitHub masks it in logs.
+        # shellcheck disable=SC2086 # SF_ARGS is intentionally word-split
+        secureflow "$SF_COMMAND" \
+          --config "$SF_CONFIG" \
+          --non-interactive \
+          --password "$SECUREFLOW_PASSWORD" \
+          ${SF_ARGS}

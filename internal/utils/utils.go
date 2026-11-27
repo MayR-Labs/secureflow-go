@@ -2,8 +2,14 @@ package utils
 
 import (
 	"bufio"
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/signal"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -25,26 +31,150 @@ func Colorize(color, text string) string {
 	return color + text + ColorReset
 }
 
-// ReadPassword reads a password from stdin without echoing
+// stdin is shared by every prompt. Creating a new bufio.Reader per prompt can
+// swallow input that was read ahead into a discarded buffer (e.g. when answers
+// are piped in), so all line reads go through this single reader.
+var stdin = bufio.NewReader(os.Stdin)
+
+// StdinIsTerminal reports whether stdin is an interactive terminal
+func StdinIsTerminal() bool {
+	return term.IsTerminal(int(os.Stdin.Fd()))
+}
+
+// ErrNoInput is returned when a prompt needs input but stdin is closed/empty
+var ErrNoInput = errors.New("no input available on stdin")
+
+// ReadPassword reads a password without echoing it. When stdin is not a
+// terminal (piped input) it reads a single line instead. If the user presses
+// Ctrl+C while typing, the terminal's echo is restored before exiting.
 func ReadPassword(prompt string) (string, error) {
-	fmt.Print(prompt)
-	bytePassword, err := term.ReadPassword(int(syscall.Stdin))
-	fmt.Println() // Add newline after password input
+	fmt.Fprint(os.Stderr, prompt)
+
+	if !StdinIsTerminal() {
+		line, err := readLine()
+		fmt.Fprintln(os.Stderr)
+		return line, err
+	}
+
+	fd := int(os.Stdin.Fd())
+	state, err := term.GetState(fd)
+	if err != nil {
+		return "", fmt.Errorf("failed to read terminal state: %w", err)
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	done := make(chan struct{})
+	defer func() {
+		signal.Stop(sigCh)
+		close(done)
+	}()
+	go func() {
+		select {
+		case <-sigCh:
+			_ = term.Restore(fd, state)
+			fmt.Fprintln(os.Stderr)
+			os.Exit(130)
+		case <-done:
+		}
+	}()
+
+	bytePassword, err := term.ReadPassword(fd)
+	fmt.Fprintln(os.Stderr) // newline after hidden input
 	if err != nil {
 		return "", fmt.Errorf("failed to read password: %w", err)
 	}
 	return string(bytePassword), nil
 }
 
-// ReadLine reads a line of text from stdin
+// ReadLine prints prompt and reads a line of text from stdin
 func ReadLine(prompt string) (string, error) {
-	fmt.Print(prompt)
-	reader := bufio.NewReader(os.Stdin)
-	text, err := reader.ReadString('\n')
+	fmt.Fprint(os.Stderr, prompt)
+	return readLine()
+}
+
+func readLine() (string, error) {
+	text, err := stdin.ReadString('\n')
 	if err != nil {
+		// Accept a final line without a trailing newline
+		if errors.Is(err, io.EOF) && text != "" {
+			return strings.TrimSpace(text), nil
+		}
+		if errors.Is(err, io.EOF) {
+			return "", ErrNoInput
+		}
 		return "", fmt.Errorf("failed to read input: %w", err)
 	}
 	return strings.TrimSpace(text), nil
+}
+
+// Confirm asks a yes/no question; anything but y/yes is "no"
+func Confirm(prompt string) (bool, error) {
+	answer, err := ReadLine(prompt)
+	if err != nil {
+		return false, err
+	}
+	answer = strings.ToLower(answer)
+	return answer == "y" || answer == "yes", nil
+}
+
+// WriteFileAtomic writes data to a temp file in the same directory, sets perm,
+// and renames it over path. Readers never see a half-written file, and perm is
+// applied even when path already exists (os.WriteFile only applies perm when
+// creating a new file).
+func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp, err := StageFile(path, data, perm)
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("failed to replace %s: %w", path, err)
+	}
+	return nil
+}
+
+// StageFile writes data to a temp file next to path and returns its name.
+// The caller renames it into place (or removes it) later; this lets several
+// files be prepared first and swapped in together.
+func StageFile(path string, data []byte, perm os.FileMode) (string, error) {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file in %s: %w", dir, err)
+	}
+	name := tmp.Name()
+	fail := func(err error) (string, error) {
+		tmp.Close()
+		os.Remove(name)
+		return "", err
+	}
+	if err := tmp.Chmod(perm); err != nil && runtime.GOOS != "windows" {
+		return fail(fmt.Errorf("failed to set permissions: %w", err))
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return fail(fmt.Errorf("failed to write %s: %w", path, err))
+	}
+	if err := tmp.Sync(); err != nil {
+		return fail(fmt.Errorf("failed to flush %s: %w", path, err))
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(name)
+		return "", fmt.Errorf("failed to close %s: %w", path, err)
+	}
+	return name, nil
+}
+
+// CountLines counts newline-terminated lines (plus a final unterminated one)
+func CountLines(data []byte) int {
+	if len(data) == 0 {
+		return 0
+	}
+	n := bytes.Count(data, []byte{'\n'})
+	if data[len(data)-1] != '\n' {
+		n++
+	}
+	return n
 }
 
 // FileInfo represents metadata about a file
@@ -101,18 +231,11 @@ func FileExists(path string) bool {
 	return err == nil
 }
 
-// CopyFile copies a file from src to dst
-func CopyFile(src, dst string) error {
-	// Read source file
+// CopyFile copies src to dst atomically with the given permissions
+func CopyFile(src, dst string, perm os.FileMode) error {
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return fmt.Errorf("failed to read source file: %w", err)
 	}
-
-	// Write to destination file
-	if err := os.WriteFile(dst, data, 0644); err != nil {
-		return fmt.Errorf("failed to write destination file: %w", err)
-	}
-
-	return nil
+	return WriteFileAtomic(dst, data, perm)
 }

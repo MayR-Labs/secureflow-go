@@ -3,6 +3,7 @@ package utils
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -232,7 +233,7 @@ func TestCopyFile(t *testing.T) {
 	}
 
 	// Test copy
-	if err := CopyFile(srcPath, dstPath); err != nil {
+	if err := CopyFile(srcPath, dstPath, 0600); err != nil {
 		t.Fatalf("CopyFile failed: %v", err)
 	}
 
@@ -257,8 +258,44 @@ func TestCopyFileNonExistent(t *testing.T) {
 	srcPath := filepath.Join(tmpDir, "nonexistent.txt")
 	dstPath := filepath.Join(tmpDir, "dest.txt")
 
-	err := CopyFile(srcPath, dstPath)
+	err := CopyFile(srcPath, dstPath, 0600)
 	if err == nil {
 		t.Error("Expected error when copying non-existent file")
+	}
+}
+
+func TestWriteFileAtomicSetsPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix permissions")
+	}
+	path := filepath.Join(t.TempDir(), "secret.env")
+
+	// Pre-existing world-readable file must end up 0600 after the write
+	if err := os.WriteFile(path, []byte("old"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFileAtomic(path, []byte("new"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	info, _ := os.Stat(path)
+	if info.Mode().Perm() != 0600 {
+		t.Errorf("mode = %v, want 0600", info.Mode().Perm())
+	}
+	if data, _ := os.ReadFile(path); string(data) != "new" {
+		t.Errorf("content = %q", data)
+	}
+
+	entries, _ := os.ReadDir(filepath.Dir(path))
+	if len(entries) != 1 {
+		t.Errorf("temp files left behind: %v", entries)
+	}
+}
+
+func TestCountLines(t *testing.T) {
+	cases := map[string]int{"": 0, "a": 1, "a\n": 1, "a\nb": 2, "a\nb\n": 2}
+	for in, want := range cases {
+		if got := CountLines([]byte(in)); got != want {
+			t.Errorf("CountLines(%q) = %d, want %d", in, got, want)
+		}
 	}
 }

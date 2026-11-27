@@ -1,0 +1,19 @@
+# Keeps pinned dependencies current. Each update arrives as a PR that CI must pass,
+# instead of workflows silently picking up whatever a tag points to today.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      go-deps:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

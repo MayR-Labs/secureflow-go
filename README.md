@@ -8,13 +8,15 @@
 
 ## ✨ Why SecureFlow?
 
-- **🔒 Strong Security**: AES-256-CBC encryption with PBKDF2 key derivation (OpenSSL-compatible)
+- **🔒 Strong Security**: AES-256-GCM authenticated encryption, PBKDF2-SHA256 (600,000 iterations)
 - **🚀 Fast & Lightweight**: Single binary, no dependencies, instant startup
 - **🌍 Cross-Platform**: Works on Linux, macOS, and Windows
 - **🤖 CI/CD Ready**: Non-interactive mode designed for automation
 - **📝 Configuration-Based**: Simple YAML config for managing multiple files
 - **🧪 Safe Testing**: Test decryption without overwriting existing files
-- **📊 Detailed Reports**: Track what's encrypted, when, and metadata
+- **📊 JSON Manifest**: Track what's encrypted, when, and the password hint
+- **🔄 Easy Rotation**: `secureflow refresh` re-encrypts everything with a new password
+- **➕ One-step adds**: `secureflow add <file>` updates the config, `.gitignore`, and encrypts
 - **💪 Production-Ready**: Battle-tested, reliable error handling
 
 ---
@@ -153,7 +155,7 @@ This command will:
 **Option A: Install during CI/CD run**
 ```yaml
 steps:
-  - uses: actions/checkout@v3
+  - uses: actions/checkout@v4
   
   - name: Setup SecureFlow locally
     run: |
@@ -176,7 +178,7 @@ git commit -m "Add portable SecureFlow"
 Then your CI/CD workflow is simply:
 ```yaml
 steps:
-  - uses: actions/checkout@v3
+  - uses: actions/checkout@v4
   
   - name: Decrypt secrets
     run: ./secureflow.sh decrypt --password "${{ secrets.SECUREFLOW_PASSWORD }}" --non-interactive
@@ -251,10 +253,12 @@ files:
 secureflow encrypt
 ```
 
+Interactively you're asked to confirm the password, and the previous hint is offered as the default.
+
 **Non-interactive mode** (for scripts and CI/CD):
 
 ```bash
-secureflow encrypt --password "your_password" --non-interactive
+secureflow encrypt --password "your_password" --non-interactive --hint "the usual" --note "Q4 rotation"
 ```
 
 **Custom config file**:
@@ -267,16 +271,23 @@ All encrypted files are saved to `enc_keys/` (or your configured `output_dir`).
 
 ### Decrypt Files
 
-**Interactive mode**:
+**Interactive mode** (shows the password hint saved at encryption time, if any):
 
 ```bash
 secureflow decrypt
+# 💡 Password hint: For the wise only
+# 🔐 Enter password to decrypt your secrets:
 ```
+
+The hint is shown again if decryption fails.
 
 **Non-interactive mode** (for CI/CD):
 
 ```bash
 secureflow decrypt --password "$ENCRYPTION_PASSWORD" --non-interactive
+
+# or keep the password off the command line
+SECUREFLOW_PASSWORD="$ENCRYPTION_PASSWORD" secureflow decrypt --non-interactive
 ```
 
 **Custom config file**:
@@ -284,6 +295,33 @@ secureflow decrypt --password "$ENCRYPTION_PASSWORD" --non-interactive
 ```bash
 secureflow decrypt --config ./custom-config.yaml
 ```
+
+### Add a File
+
+Add a file to `secureflow.yaml`, ignore it in `.gitignore`, and encrypt it with your existing password, all in one step:
+
+```bash
+secureflow add .env.prod --copy-to .env
+secureflow add android/app/keystore.jks android/key.properties
+secureflow add ios/GoogleService-Info.plist --no-encrypt   # config + .gitignore only
+```
+
+The password is checked against your existing encrypted files, so everything stays under one password. Comments in `secureflow.yaml` are preserved. If the file is already tracked by git, SecureFlow tells you how to untrack it.
+
+### Refresh / Rotate the Password
+
+Re-encrypt every file, either with a new password or with the same one:
+
+```bash
+secureflow refresh                       # interactive: old password, then optional new one
+secureflow refresh --non-interactive \
+  --old-password "$OLD" --new-password "$NEW" --hint "Vault: Q1 2027"
+```
+
+- Decrypted content stays in memory only; nothing is written to disk in plaintext.
+- All-or-nothing: if any file fails to decrypt with the old password, no file is changed.
+- Leaving out the new password re-encrypts with the current one. This is how you upgrade legacy AES-CBC files to AES-GCM.
+- `secureflow rotate` is an alias.
 
 ### Test Decryption
 
@@ -307,6 +345,8 @@ secureflow init --help
 secureflow encrypt --help
 secureflow decrypt --help
 secureflow test --help
+secureflow add --help
+secureflow refresh --help
 secureflow install-local --help
 ```
 
@@ -324,14 +364,12 @@ test_output_dir: test_dec_keys # Where test decryption outputs go
 
 files:
   - input: .env.production       # Source file (relative to project root)
-    output: .env.production.encrypted  # Encrypted filename
+    output: .env.production.encrypted  # (Optional) Encrypted filename
     copy_to: .env                # (Optional) Copy decrypted file to this path
 
-  - input: config/database.yml
-    output: database.yml.encrypted
-    
-  - input: ssl/private.key
-    output: ssl-private.key.encrypted
+  - input: config/database.yml   # output inferred: config-database.yml.encrypted
+
+  - input: android/app/keystore.jks  # output inferred: android-app-keystore.jks.encrypted
 ```
 
 ### Configuration Options
@@ -340,7 +378,7 @@ files:
 - **`test_output_dir`**: Directory for test decryption (added to .gitignore)
 - **`files`**: Array of file entries
   - **`input`**: Path to source file (relative to project root)
-  - **`output`**: Encrypted filename (just filename, not path)
+  - **`output`**: *(Optional)* Encrypted filename (just filename, not path). When omitted it's inferred from `input` by replacing `/` with `-` and appending `.encrypted`, e.g. `android/app/keystore.jks` → `android-app-keystore.jks.encrypted`. SecureFlow refuses configs where two files would end up with the same encrypted name.
   - **`copy_to`**: *(Optional)* Copy decrypted file to this path - useful when apps expect `.env` but you store `.env.prod`
 
 ### The `copy_to` Feature
@@ -378,7 +416,52 @@ See the [Configuration Guide](./docs/configuration.md) for detailed examples inc
 
 SecureFlow is designed to work seamlessly in CI/CD pipelines with its non-interactive mode.
 
-### Method 1: Local Installation (Recommended)
+### GitHub Action (Recommended for GitHub)
+
+Use the SecureFlow action as a step in the same job that builds your app. It downloads the right binary for the runner (Linux/macOS/Windows, x64/ARM64), verifies its SHA-256 checksum, adds `secureflow` to `PATH`, and decrypts your secrets:
+
+```yaml
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decrypt secrets
+        uses: MayR-Labs/secureflow-go@v1.3.0
+        with:
+          password: ${{ secrets.SECUREFLOW_PASSWORD }}
+
+      - name: Build & Deploy
+        run: |
+          npm run build
+          ./deploy.sh
+```
+
+| Input | Default | Description |
+|---|---|---|
+| `password` | — | Encryption password (from a secret). Required unless `command: install`. |
+| `command` | `decrypt` | `decrypt`, `test`, `encrypt`, or `install` (install only). |
+| `config` | `secureflow.yaml` | Config file path, relative to `working-directory`. |
+| `working-directory` | `.` | Directory to run in (useful for monorepos). |
+| `version` | pinned tag, else `latest` | SecureFlow release to install, e.g. `v1.3.0`. |
+| `args` | — | Extra arguments for the command. |
+| `verify-provenance` | `true` | Verify the binary's GitHub build-provenance attestation (v1.3.0+), on top of the SHA-256 checksum. |
+
+Outputs: `version` (installed version) and `path` (path to the binary).
+
+> **Why an action and not a reusable workflow?** A reusable workflow (`workflow_call`) runs as a separate job on a separate machine, so the decrypted files would not exist in your build job. The action runs as a step inside your job.
+
+Pin to a release tag (`@v1.3.0`) or a commit SHA rather than `@main` so a change on `main` can't alter your pipeline.
+
+### Method 1: Local Installation
 
 The easiest approach for CI/CD is to use `install-local` which creates a portable installation.
 
@@ -396,7 +479,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       # Download and setup SecureFlow (no sudo required)
       - name: Setup SecureFlow
@@ -443,7 +526,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       # No installation needed - files are already in the repo!
       - name: Decrypt secrets
@@ -471,7 +554,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       # Install SecureFlow globally
       - name: Install SecureFlow
@@ -540,18 +623,20 @@ Comprehensive documentation is available in the `docs/` directory:
 
 ### Encryption Details
 
-- **Algorithm**: AES-256-CBC (Advanced Encryption Standard, 256-bit)
-- **Key Derivation**: PBKDF2 with SHA-256
-- **Format**: OpenSSL-compatible (Salted__ header + 8-byte salt + encrypted data)
-- **Compatibility**: Files can be encrypted/decrypted with OpenSSL
+- **Algorithm**: AES-256-GCM (authenticated encryption: tampering or a wrong password is always detected)
+- **Key Derivation**: PBKDF2-HMAC-SHA256, 600,000 iterations, 16-byte random salt per file
+- **Format**: `SFENC` header (version, iterations, salt, nonce) + ciphertext + 16-byte auth tag; the header is authenticated too
+- **Legacy files**: files from SecureFlow ≤ 1.2 (OpenSSL-compatible AES-256-CBC) still decrypt. Run `secureflow refresh` to upgrade them.
+
+> **Note:** since 1.3, newly encrypted files are no longer OpenSSL-compatible. GCM with a SecureFlow header replaces the unauthenticated CBC format, which could be silently modified.
 
 ### Security Model
 
 - **Passwords are never stored or logged**
-- **Strong encryption** (AES-256-CBC) with proper key derivation (PBKDF2)
-- **OpenSSL compatible** - industry-standard format
-- **Non-interactive mode** for secure CI/CD integration
-- **Clean password handling** - passwords cleared from memory after use
+- **Authenticated encryption** (AES-256-GCM) with a slow key derivation (PBKDF2, 600k iterations)
+- **Decrypted files are owner-only** (`0600`), and every write is atomic
+- **Non-interactive mode** for secure CI/CD integration (`SECUREFLOW_PASSWORD` keeps the password off the command line)
+- **Verified downloads**: release binaries ship with SHA-256 checksums and GitHub build-provenance attestations
 
 ### Best Practices
 
@@ -574,31 +659,35 @@ For comprehensive security guidance, see our [Security Guide](./docs/security.md
 
 ---
 
-## 📊 Encryption Reports
+## 📊 Encryption Manifest
 
-Each encryption run generates a `report.txt` in your output directory with detailed metadata:
+`encrypt`, `add` and `refresh` maintain `manifest.json` in your output directory (commit it alongside the encrypted files):
 
+```json
+{
+  "schema_version": 1,
+  "note": "Encrypted secrets for CI/CD",
+  "password_hint": "For the wise only",
+  "created_at": "2026-11-27T14:39:31Z",
+  "updated_at": "2026-11-27T15:02:10Z",
+  "files": [
+    {
+      "input": "android/app/keystore.jks",
+      "encrypted": "android-app-keystore.jks.encrypted",
+      "format": "v2-aes-256-gcm",
+      "size_bytes": 2754,
+      "lines": 12,
+      "source_modified": "2026-11-27T14:39:30Z",
+      "encrypted_at": "2026-11-27T14:39:31Z",
+      "encrypted_sha256": "5e0c3cab4af6d36a42d178037909b26989565937d7f9791a6930674584b78d1f"
+    }
+  ]
+}
 ```
-Encryption Report
-=================
-Note: Encrypted secrets for CI/CD
-Password Hint: For the wise only
-Created at: 2025-10-24
-=================
 
-File:           .env.prod
-Encrypted As:   .env.prod.encrypted
-Size (bytes):   348
-Lines:          17
-Last Modified:  2025-10-22 11:24:09
-----------------------------------------
-```
-
-This helps you track:
-- What files are encrypted
-- When they were encrypted
-- Password hints for team reference
-- File sizes and metadata
+- The **password hint** is shown by `decrypt`, `test` and `refresh` before asking for the password.
+- Nothing derived from the plaintext (such as a hash) is stored, since that would let someone check guesses offline. `encrypted_sha256` is the hash of the *encrypted* file.
+- A `report.txt` from SecureFlow ≤ 1.2 is still read for its hint, and replaced by `manifest.json` on the next write.
 
 ---
 

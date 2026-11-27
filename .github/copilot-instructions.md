@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SecureFlow is a Go-based CLI tool for securely encrypting and decrypting sensitive files using AES-256-CBC encryption with OpenSSL-compatible standards. It's designed to replace fragile Bash scripts with a fast, cross-platform executable.
+SecureFlow is a Go-based CLI tool for securely encrypting and decrypting sensitive files using AES-256-GCM authenticated encryption (legacy OpenSSL-compatible standards. It's designed to replace fragile Bash scripts with a fast, cross-platform executable.
 
 ## Architecture
 
@@ -29,7 +29,7 @@ secureflow-go/
 - **Language**: Go 1.17+
 - **CLI Framework**: cobra (github.com/spf13/cobra)
 - **Config Format**: YAML (gopkg.in/yaml.v3)
-- **Encryption**: AES-256-CBC via crypto/aes, crypto/cipher, OpenSSL-compatible
+- **Encryption**: AES-256-GCM via crypto/aes, crypto/cipher; PBKDF2-SHA256 600k iterations; legacy AES-256-CBC (OpenSSL format) is decrypt-only
 
 ## Coding Standards
 
@@ -67,8 +67,8 @@ secureflow-go/
    - Use secure password input (no echo) for interactive mode
 
 2. **Encryption Standards**
-   - AES-256-CBC with PBKDF2 key derivation
-   - OpenSSL-compatible format (Salted__ header)
+   - AES-256-GCM with PBKDF2-SHA256 (600k iterations), versioned "SFENC" header used as AAD
+   - Legacy OpenSSL "Salted__" AES-256-CBC files are decrypt-only
    - Use crypto/rand for random generation
 
 3. **File Operations**
@@ -153,18 +153,19 @@ golangci-lint run
 
 ## Encryption/Decryption Implementation
 
-The crypto package should implement OpenSSL-compatible encryption:
-- Use PBKDF2 for key derivation from password
-- Add "Salted__" prefix followed by 8-byte salt
-- Use AES-256-CBC mode
-- Match OpenSSL's `openssl enc -aes-256-cbc -salt -pbkdf2` behavior
+The crypto package (internal/crypto) writes the v2 format and must stay backward compatible:
+- New files: AES-256-GCM, key from PBKDF2-HMAC-SHA256 (600,000 iterations, 16-byte salt)
+- Header "SFENC\0" + version + iterations + salt + nonce, authenticated as GCM AAD
+- Legacy "Salted__" AES-256-CBC (OpenSSL `enc -pbkdf2`) files must still decrypt, but are never written
+- Decrypted files are written atomically with 0600 permissions
 
-## Report Generation
+## Manifest
 
-After encryption, generate a report.txt file with:
+After encryption, update <output_dir>/manifest.json (see internal/manifest) with:
 - Encryption note and password hint
 - Timestamp
-- For each file: name, encrypted name, size, line count, last modified
+- For each file: input, encrypted name, format, size, line count, source modified time, encrypted file SHA-256
+- Never store anything derived from plaintext content
 
 ## Contribution Guidelines
 

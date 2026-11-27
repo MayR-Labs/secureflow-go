@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -302,5 +303,118 @@ func TestMicroservicesConfig(t *testing.T) {
 	}
 	if len(cfg.Files) == 0 {
 		t.Error("Expected non-empty files list")
+	}
+}
+
+func TestInferOutputName(t *testing.T) {
+	tests := map[string]string{
+		"android/app/keystore.jks": "android-app-keystore.jks.encrypted",
+		".env.prod":                ".env.prod.encrypted",
+		"./config/database.yml":    "config-database.yml.encrypted",
+		"services//auth/.env.prod": "services-auth-.env.prod.encrypted",
+		"../shared/secret.key":     "shared-secret.key.encrypted",
+		"/etc/app/secret.pem":      "etc-app-secret.pem.encrypted",
+		`android\app\keystore.jks`: "android-app-keystore.jks.encrypted",
+	}
+	for input, want := range tests {
+		if got := InferOutputName(input); got != want {
+			t.Errorf("InferOutputName(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestEncryptedNamePrefersExplicitOutput(t *testing.T) {
+	f := FileMapping{Input: "android/app/keystore.jks", Output: "keystore.jks.encrypted"}
+	if got := f.EncryptedName(); got != "keystore.jks.encrypted" {
+		t.Errorf("EncryptedName() = %q, want explicit output", got)
+	}
+	f.Output = ""
+	if got := f.EncryptedName(); got != "android-app-keystore.jks.encrypted" {
+		t.Errorf("EncryptedName() = %q, want inferred output", got)
+	}
+}
+
+func TestValidate(t *testing.T) {
+	valid := &Config{OutputDir: "enc", Files: []FileMapping{{Input: "a/.env"}, {Input: "b/.env"}}}
+	if err := valid.Validate(); err != nil {
+		t.Errorf("expected valid config, got %v", err)
+	}
+
+	cases := map[string]*Config{
+		"missing output_dir": {Files: []FileMapping{{Input: ".env"}}},
+		"missing input":      {OutputDir: "enc", Files: []FileMapping{{Output: "x.encrypted"}}},
+		"duplicate output": {OutputDir: "enc", Files: []FileMapping{
+			{Input: "android/app/keystore.jks"},
+			{Input: "other.jks", Output: "android-app-keystore.jks.encrypted"},
+		}},
+	}
+	for name, cfg := range cases {
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("%s: expected validation error", name)
+		}
+	}
+}
+
+func TestLoadWithoutOutput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secureflow.yaml")
+	yaml := "output_dir: enc_keys\nfiles:\n  - input: android/app/keystore.jks\n"
+	if err := os.WriteFile(path, []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if got := cfg.Files[0].EncryptedName(); got != "android-app-keystore.jks.encrypted" {
+		t.Errorf("EncryptedName() = %q", got)
+	}
+}
+
+func TestAppendFilesPreservesComments(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secureflow.yaml")
+	original := `# Project secrets
+output_dir: enc_keys # committed
+test_output_dir: test_dec_keys
+
+files:
+  # production env
+  - input: .env.prod
+    copy_to: .env
+`
+	if err := os.WriteFile(path, []byte(original), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendFiles(path, []FileMapping{{Input: "android/app/keystore.jks"}, {Input: "a.json", Output: "x.encrypted", CopyTo: "b.json"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, _ := os.ReadFile(path)
+	got := string(data)
+	for _, want := range []string{"# Project secrets", "# committed", "# production env", "input: android/app/keystore.jks", "output: x.encrypted"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("result missing %q:\n%s", want, got)
+		}
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Files) != 3 || cfg.Files[1].EncryptedName() != "android-app-keystore.jks.encrypted" || cfg.Files[2].CopyTo != "b.json" {
+		t.Errorf("unexpected files: %+v", cfg.Files)
+	}
+}
+
+func TestAppendFilesEmptyList(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secureflow.yaml")
+	if err := os.WriteFile(path, []byte("output_dir: enc\nfiles: []\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendFiles(path, []FileMapping{{Input: ".env"}}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil || len(cfg.Files) != 1 {
+		t.Fatalf("got %+v, %v", cfg, err)
 	}
 }

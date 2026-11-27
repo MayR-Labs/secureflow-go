@@ -1,10 +1,125 @@
 package crypto
 
 import (
+	"bytes"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
+
+func TestMain(m *testing.M) {
+	// Keep tests fast; the iteration count is stored in each file's header.
+	iterations = minIterations
+	os.Exit(m.Run())
+}
+
+func TestEncryptDecryptRoundTrip(t *testing.T) {
+	for _, plaintext := range [][]byte{{}, []byte("x"), bytes.Repeat([]byte("secret\n"), 1000)} {
+		ct, err := Encrypt(plaintext, "pw")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := Decrypt(ct, "pw")
+		if err != nil {
+			t.Fatalf("Decrypt: %v", err)
+		}
+		if !bytes.Equal(got, plaintext) {
+			t.Errorf("round trip mismatch for %d bytes", len(plaintext))
+		}
+	}
+}
+
+func TestEncryptIsRandomised(t *testing.T) {
+	a, _ := Encrypt([]byte("same"), "pw")
+	b, _ := Encrypt([]byte("same"), "pw")
+	if bytes.Equal(a, b) {
+		t.Error("two encryptions of the same plaintext must differ (salt/nonce)")
+	}
+}
+
+func TestDecryptDetectsTampering(t *testing.T) {
+	ct, err := Encrypt([]byte("API_KEY=abc"), "pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Decrypt(ct, "wrong"); !errors.Is(err, ErrDecrypt) {
+		t.Errorf("wrong password: got %v, want ErrDecrypt", err)
+	}
+
+	for name, idx := range map[string]int{
+		"salt":       len(v2Magic) + 5,
+		"nonce":      v2HeaderSize - 1,
+		"ciphertext": v2HeaderSize,
+		"tag":        len(ct) - 1,
+	} {
+		bad := bytes.Clone(ct)
+		bad[idx] ^= 0x01
+		if _, err := Decrypt(bad, "pw"); err == nil {
+			t.Errorf("flipping a %s byte should fail decryption", name)
+		}
+	}
+
+	// Iteration count is authenticated too
+	bad := bytes.Clone(ct)
+	bad[len(v2Magic)+3] ^= 0x01
+	if _, err := Decrypt(bad, "pw"); err == nil {
+		t.Error("changing the iteration count should fail decryption")
+	}
+
+	// Unsupported version
+	bad = bytes.Clone(ct)
+	bad[len(v2Magic)] = 9
+	if _, err := Decrypt(bad, "pw"); err == nil {
+		t.Error("unknown version should fail")
+	}
+
+	// Truncated
+	if _, err := Decrypt(ct[:v2HeaderSize+3], "pw"); err == nil {
+		t.Error("truncated file should fail")
+	}
+}
+
+func TestLegacyFilesStillDecrypt(t *testing.T) {
+	ct, err := encryptLegacy([]byte("old secret"), "pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f, _ := DetectFormat(ct); f != FormatLegacy {
+		t.Fatalf("expected legacy format, got %q", f)
+	}
+	got, err := Decrypt(ct, "pw")
+	if err != nil || string(got) != "old secret" {
+		t.Fatalf("legacy decrypt = %q, %v", got, err)
+	}
+	if _, err := Decrypt(ct, "wrong"); err == nil {
+		t.Error("legacy decrypt with wrong password should fail")
+	}
+}
+
+// Files produced by `openssl enc -aes-256-cbc -salt -pbkdf2` (SecureFlow v1) must still decrypt.
+func TestLegacyOpenSSLCompatibility(t *testing.T) {
+	if _, err := exec.LookPath("openssl"); err != nil {
+		t.Skip("openssl not installed")
+	}
+	dir := t.TempDir()
+	in := filepath.Join(dir, "in.txt")
+	out := filepath.Join(dir, "in.txt.encrypted")
+	if err := os.WriteFile(in, []byte("made by openssl\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("openssl", "enc", "-aes-256-cbc", "-salt", "-pbkdf2", "-in", in, "-out", out, "-pass", "pass:pw")
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("openssl does not support -pbkdf2 here: %v %s", err, b)
+	}
+	data, _ := os.ReadFile(out)
+	got, err := Decrypt(data, "pw")
+	if err != nil || string(got) != "made by openssl\n" {
+		t.Fatalf("openssl file decrypt = %q, %v", got, err)
+	}
+}
 
 func TestEncryptDecryptFile(t *testing.T) {
 	// Create temp directory for test files
@@ -38,18 +153,13 @@ func TestEncryptDecryptFile(t *testing.T) {
 			t.Fatal("Encrypted file was not created")
 		}
 
-		// Verify encrypted file has "Salted__" prefix
+		// Verify encrypted file uses the v2 format
 		data, err := os.ReadFile(encryptedPath)
 		if err != nil {
 			t.Fatalf("Failed to read encrypted file: %v", err)
 		}
-
-		if len(data) < len(saltedPrefix) {
-			t.Fatal("Encrypted file is too short")
-		}
-
-		if string(data[:len(saltedPrefix)]) != saltedPrefix {
-			t.Errorf("Expected 'Salted__' prefix, got: %s", string(data[:len(saltedPrefix)]))
+		if f, err := DetectFormat(data); err != nil || f != FormatV2 {
+			t.Errorf("Expected v2 format, got %q (%v)", f, err)
 		}
 	})
 

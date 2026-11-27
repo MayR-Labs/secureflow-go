@@ -1,13 +1,12 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"time"
 
 	"github.com/MayR-Labs/secureflow-go/internal/config"
-	"github.com/MayR-Labs/secureflow-go/internal/crypto"
+	"github.com/MayR-Labs/secureflow-go/internal/manifest"
 	"github.com/MayR-Labs/secureflow-go/internal/utils"
 	"github.com/spf13/cobra"
 )
@@ -15,133 +14,162 @@ import (
 var encryptCmd = &cobra.Command{
 	Use:   "encrypt",
 	Short: "Encrypt files specified in the configuration",
-	Long: `Encrypts all files listed in secureflow.yaml using AES-256-CBC encryption.
-Generates a report file with metadata about encrypted files.`,
+	Long: `Encrypts all files listed in secureflow.yaml using AES-256-GCM with a
+PBKDF2-SHA256 derived key (600,000 iterations).
+
+Writes <output_dir>/manifest.json with the password hint, note and metadata
+about each encrypted file.
+
+If encrypted files already exist, the password must match them. To change the
+password, use 'secureflow refresh' (or --force to re-encrypt from the plaintext
+files with a new password).`,
 	RunE: runEncrypt,
 }
 
+var (
+	encryptHint  string
+	encryptNote  string
+	encryptForce bool
+)
+
 func init() {
 	rootCmd.AddCommand(encryptCmd)
+	encryptCmd.Flags().StringVar(&encryptHint, "hint", "", "password hint saved in the manifest and shown on decrypt")
+	encryptCmd.Flags().StringVar(&encryptNote, "note", "", "short note saved in the manifest")
+	encryptCmd.Flags().BoolVar(&encryptForce, "force", false, "re-encrypt with a password that differs from the existing encrypted files")
 }
 
 func runEncrypt(cmd *cobra.Command, args []string) error {
-	// Load config
 	cfg, err := config.Load(cfgFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Get password
-	var pwd string
-	if password != "" {
-		pwd = password
-	} else if nonInteractive {
-		return fmt.Errorf("password required in non-interactive mode (use --password flag)")
-	} else {
-		pwd, err = utils.ReadPassword(utils.Colorize(utils.ColorBlue, "🔐 Enter password to encrypt your secrets: "))
-		if err != nil {
-			return err
-		}
-		if pwd == "" {
-			return fmt.Errorf("password cannot be empty")
-		}
+	m, err := manifest.Load(cfg.OutputDir)
+	if err != nil {
+		return err
 	}
 
-	// Get optional password hint
-	var passwordHint string
-	if !nonInteractive {
-		passwordHint, err = utils.ReadLine(utils.Colorize(utils.ColorBlue, "🔑 (Optional) Enter a password hint (leave blank to skip): "))
-		if err != nil {
+	// Get password (confirm it interactively so a typo doesn't lock secrets away)
+	pwd, err := promptForPassword("🔐 Enter password to encrypt your secrets: ", m.PasswordHint)
+	if err != nil {
+		return err
+	}
+	if passwordFromFlagOrEnv() == "" {
+		if err := confirmPassword(pwd); err != nil {
 			return err
 		}
 	}
 
-	// Get optional note
-	var note string
-	if !nonInteractive {
-		note, err = utils.ReadLine(utils.Colorize(utils.ColorBlue, "📝 (Optional) Enter a short note (leave blank for default): "))
-		if err != nil {
+	// Work out which inputs are present
+	present := map[string]bool{}
+	var missing []config.FileMapping
+	for _, fm := range cfg.Files {
+		if utils.FileExists(fm.Input) {
+			present[fm.Input] = true
+		} else {
+			missing = append(missing, fm)
+		}
+	}
+	if len(present) == 0 {
+		return fmt.Errorf("none of the input files exist; nothing to encrypt")
+	}
+
+	// Make sure we don't end up with files encrypted under different passwords
+	if err := checkPasswordConsistency(cfg, pwd, present, len(missing) > 0); err != nil {
+		return err
+	}
+
+	// Hint and note
+	if cmd.Flags().Changed("hint") {
+		m.PasswordHint = encryptHint
+	} else if !nonInteractive {
+		if m.PasswordHint, err = promptHint(m.PasswordHint); err != nil {
 			return err
 		}
 	}
-	if note == "" {
-		note = "Encrypted secrets for CI/CD"
+	if cmd.Flags().Changed("note") {
+		m.Note = encryptNote
+	} else if !nonInteractive {
+		def := m.Note
+		if def == "" {
+			def = manifest.DefaultNote
+		}
+		note, err := utils.ReadLine(utils.Colorize(utils.ColorBlue, fmt.Sprintf("📝 (Optional) Enter a short note (leave blank for %q): ", def)))
+		if err != nil {
+			return err
+		}
+		if note != "" {
+			m.Note = note
+		}
 	}
 
 	fmt.Println()
 
-	// Ensure output directory exists
-	if err := utils.EnsureDir(cfg.OutputDir); err != nil {
+	// Encrypt everything in memory first, then write all files together
+	var out []*sealed
+	for _, fm := range cfg.Files {
+		if !present[fm.Input] {
+			fmt.Printf("%s ⚠️  Warning: %s not found, skipping%s\n", utils.ColorYellow, fm.Input, utils.ColorReset)
+			continue
+		}
+		fmt.Printf("%s 📦 Encrypting %s...%s\n", utils.ColorYellow, fm.Input, utils.ColorReset)
+		s, err := sealInput(cfg, fm, pwd)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt %s: %w", fm.Input, err)
+		}
+		out = append(out, s)
+	}
+
+	if err := writeSealed(out); err != nil {
+		return err
+	}
+	for _, s := range out {
+		m.Upsert(s.entry)
+		fmt.Printf("%s ✅ %s -> %s%s\n", utils.ColorGreen, s.entry.Input, s.path, utils.ColorReset)
+	}
+
+	m.Prune(cfg.Inputs())
+	if err := m.Save(cfg.OutputDir); err != nil {
 		return err
 	}
 
-	// Create report file
-	reportPath := filepath.Join(cfg.OutputDir, "report.txt")
-	reportFile, err := os.Create(reportPath)
+	fmt.Println()
+	fmt.Printf("%s ✅ Encryption complete. %d file(s) saved to %s%s\n", utils.ColorGreen, len(out), cfg.OutputDir, utils.ColorReset)
+	fmt.Printf("📄 Manifest saved to %s\n", manifest.Path(cfg.OutputDir))
+	return nil
+}
+
+// checkPasswordConsistency stops encrypt from silently mixing passwords.
+// If any existing encrypted file can't be opened with pwd:
+//   - and some inputs are missing, those old files would keep the old password -> error
+//   - otherwise every file is re-encrypted, so allow it with --force or confirmation
+func checkPasswordConsistency(cfg *config.Config, pwd string, present map[string]bool, someMissing bool) error {
+	err := verifyPassword(cfg, pwd, nil)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, errPasswordMismatch) {
+		return err
+	}
+
+	if someMissing {
+		return fmt.Errorf("%w\n(some input files are missing, so re-encrypting would leave files under two different passwords)", err)
+	}
+	if encryptForce {
+		return nil
+	}
+	if nonInteractive {
+		return fmt.Errorf("%w\n(pass --force to re-encrypt everything with the new password)", err)
+	}
+
+	fmt.Fprintln(os.Stderr, utils.Colorize(utils.ColorYellow, "⚠️  This password doesn't match your existing encrypted files."))
+	ok, err := utils.Confirm("Re-encrypt every file with the new password? (y/N): ")
 	if err != nil {
-		return fmt.Errorf("failed to create report file: %w", err)
+		return err
 	}
-	defer reportFile.Close()
-
-	// Write report header
-	fmt.Fprintf(reportFile, "Encryption Report\n")
-	fmt.Fprintf(reportFile, "=================\n")
-	fmt.Fprintf(reportFile, "\n")
-	fmt.Fprintf(reportFile, "Note: %s\n", note)
-	if passwordHint != "" {
-		fmt.Fprintf(reportFile, "Password Hint: %s\n", passwordHint)
-	} else {
-		fmt.Fprintf(reportFile, "Password Hint: N/A\n")
+	if !ok {
+		return fmt.Errorf("aborted; nothing was changed")
 	}
-	fmt.Fprintf(reportFile, "Created at: %s\n", time.Now().Format("2006-01-02"))
-	fmt.Fprintf(reportFile, "=================\n")
-	fmt.Fprintf(reportFile, "\n")
-
-	// Encrypt each file
-	successCount := 0
-	for _, fileMapping := range cfg.Files {
-		fmt.Printf("%s 📦 Encrypting %s...\n", utils.ColorYellow, fileMapping.Input)
-
-		// Check if input file exists
-		if !utils.FileExists(fileMapping.Input) {
-			fmt.Printf("%s ⚠️  Warning: %s not found, skipping\n\n", utils.ColorYellow, fileMapping.Input)
-			continue
-		}
-
-		// Get file info before encryption
-		fileInfo, err := utils.GetFileInfo(fileMapping.Input)
-		if err != nil {
-			fmt.Printf("%s ⚠️  Warning: Could not get file info for %s: %v\n\n", utils.ColorYellow, fileMapping.Input, err)
-			continue
-		}
-
-		// Encrypt file
-		outputPath := filepath.Join(cfg.OutputDir, fileMapping.Output)
-		if err := crypto.EncryptFile(fileMapping.Input, outputPath, pwd); err != nil {
-			fmt.Printf("%s ❌ Failed to encrypt %s: %v\n\n", utils.ColorRed, fileMapping.Input, err)
-			continue
-		}
-
-		fmt.Printf("%s ✅ %s encrypted successfully -> %s\n\n", utils.ColorGreen, fileMapping.Input, outputPath)
-
-		// Write to report
-		fmt.Fprintf(reportFile, "File:           %s\n", fileMapping.Input)
-		fmt.Fprintf(reportFile, "Encrypted As:   %s\n", fileMapping.Output)
-		fmt.Fprintf(reportFile, "Size (bytes):   %d\n", fileInfo.Size)
-		fmt.Fprintf(reportFile, "Lines:          %d\n", fileInfo.Lines)
-		fmt.Fprintf(reportFile, "Last Modified:  %s\n", fileInfo.LastModified.Format("2006-01-02 15:04:05"))
-		fmt.Fprintf(reportFile, "----------------------------------------\n")
-		fmt.Fprintf(reportFile, "\n")
-
-		successCount++
-	}
-
-	if successCount == 0 {
-		return fmt.Errorf("no files were encrypted")
-	}
-
-	fmt.Printf("%s ✅ Encryption complete. %d file(s) saved to %s\n", utils.ColorGreen, successCount, cfg.OutputDir)
-	fmt.Printf("📄 Report saved to %s\n", reportPath)
-
 	return nil
 }

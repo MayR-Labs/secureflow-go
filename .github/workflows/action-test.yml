@@ -1,0 +1,88 @@
+name: Test Action
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'action.yml', '.github/workflows/action-test.yml' ]
+  pull_request:
+    paths: [ 'action.yml', '.github/workflows/action-test.yml' ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  action:
+    name: Action (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest ]
+    env:
+      TEST_PASSWORD: action-test-password
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Create fixture
+        shell: bash
+        run: |
+          mkdir -p fixture/android/app
+          cd fixture
+          echo "API_KEY=hello" > .env.prod
+          echo "keystore-bytes" > android/app/keystore.jks
+          cat > secureflow.yaml <<'YAML'
+          output_dir: enc_keys
+          test_output_dir: test_dec_keys
+          files:
+            - input: .env.prod
+              output: .env.prod.encrypted
+              copy_to: .env
+            - input: android/app/keystore.jks
+              output: android-app-keystore.jks.encrypted
+          YAML
+
+      - name: Encrypt with action
+        uses: ./
+        with:
+          command: encrypt
+          password: ${{ env.TEST_PASSWORD }}
+          working-directory: fixture
+
+      - name: Remove plaintext
+        shell: bash
+        run: rm fixture/.env.prod fixture/android/app/keystore.jks
+
+      - name: Decrypt with action
+        id: sf
+        uses: ./
+        with:
+          password: ${{ env.TEST_PASSWORD }}
+          working-directory: fixture
+
+      - name: Verify
+        shell: bash
+        run: |
+          echo "Installed ${{ steps.sf.outputs.version }} at ${{ steps.sf.outputs.path }}"
+          grep -q "API_KEY=hello" fixture/.env.prod
+          grep -q "API_KEY=hello" fixture/.env
+          grep -q "keystore-bytes" fixture/android/app/keystore.jks
+          secureflow --version
+
+      - name: Wrong password fails
+        id: wrong
+        continue-on-error: true
+        uses: ./
+        with:
+          command: test
+          password: not-the-password
+          working-directory: fixture
+
+      - name: Assert wrong password failed
+        if: steps.wrong.outcome != 'failure'
+        shell: bash
+        run: |
+          echo "::error::Decrypt with a wrong password should fail"
+          exit 1

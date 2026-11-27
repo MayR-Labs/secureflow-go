@@ -233,13 +233,13 @@ Encryption completes but no files appear in output directory.
 ### Report File Not Generated
 
 **Problem**:
-Encryption succeeds but no `report.txt` is created.
+Encryption succeeds but no `manifest.json` is created.
 
 **Solutions**:
 
 1. **Check output directory**:
    ```bash
-   ls -la enc_keys/report.txt
+   ls -la enc_keys/manifest.json
    ```
 
 2. **Verify write permissions**:
@@ -266,7 +266,7 @@ Error: decryption failed (wrong password?)
 
 1. **Check password hint**:
    ```bash
-   cat enc_keys/report.txt
+   cat enc_keys/manifest.json
    ```
 
 2. **Verify you're using correct password**:
@@ -785,7 +785,7 @@ If you've tried the solutions above and still have issues:
 | `command not found` | SecureFlow not in PATH | Add to PATH or use full path |
 | `permission denied` | Insufficient permissions | Use sudo or install to user directory |
 | `config file not found` | Wrong directory or missing file | Run `secureflow init` or specify path |
-| `wrong password` | Incorrect password | Check password hint in report.txt |
+| `wrong password` | Incorrect password | Check the password hint shown on decrypt (stored in manifest.json) |
 | `file not found` | Input file missing | Verify file exists or remove from config |
 | `yaml: line X` | YAML syntax error | Fix YAML syntax at specified line |
 | `cipher: message authentication failed` | Corrupted encrypted file | Re-encrypt from source or restore backup |

@@ -9,7 +9,7 @@ import (
 
 var (
 	// Version information
-	Version = "1.2.0"
+	Version = "1.3.0"
 
 	// Global flags
 	cfgFile        string
@@ -25,6 +25,9 @@ var rootCmd = &cobra.Command{
 and decrypting sensitive files like environment variables, keystores, 
 and service credentials for local and CI/CD use.`,
 	Version: Version,
+	// Runtime errors (e.g. wrong password) shouldn't dump the full usage text
+	SilenceUsage:  true,
+	SilenceErrors: true, // Execute prints the error itself
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately

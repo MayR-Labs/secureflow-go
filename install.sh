@@ -99,20 +99,44 @@ install_binary() {
     TMP_DIR=$(mktemp -d)
     TMP_FILE="${TMP_DIR}/${BINARY_FILE}"
     
-    # Download binary
+    # Download binary and checksums (-f: fail on HTTP errors instead of saving an error page)
+    CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${LATEST_VERSION}/checksums.txt"
     if command -v curl >/dev/null 2>&1; then
-        curl -sSL -o "${TMP_FILE}" "${DOWNLOAD_URL}"
+        curl -fsSL -o "${TMP_FILE}" "${DOWNLOAD_URL}" || true
+        curl -fsSL -o "${TMP_DIR}/checksums.txt" "${CHECKSUMS_URL}" || true
     elif command -v wget >/dev/null 2>&1; then
-        wget -q -O "${TMP_FILE}" "${DOWNLOAD_URL}"
+        wget -q -O "${TMP_FILE}" "${DOWNLOAD_URL}" || true
+        wget -q -O "${TMP_DIR}/checksums.txt" "${CHECKSUMS_URL}" || true
     fi
     
-    if [ ! -f "${TMP_FILE}" ]; then
+    if [ ! -s "${TMP_FILE}" ]; then
         echo -e "${RED}Error: Failed to download binary${NC}"
         rm -rf "${TMP_DIR}"
         exit 1
     fi
     
     echo -e "${GREEN}✓${NC} Downloaded successfully"
+    
+    # Verify SHA-256 checksum
+    if [ ! -s "${TMP_DIR}/checksums.txt" ]; then
+        echo -e "${RED}Error: Failed to download checksums.txt; refusing to install an unverified binary${NC}"
+        rm -rf "${TMP_DIR}"
+        exit 1
+    fi
+    EXPECTED=$(awk -v f="${BINARY_FILE}" '$2 == f || $2 == "*"f { print $1 }' "${TMP_DIR}/checksums.txt")
+    if command -v sha256sum >/dev/null 2>&1; then
+        ACTUAL=$(sha256sum "${TMP_FILE}" | awk '{print $1}')
+    else
+        ACTUAL=$(shasum -a 256 "${TMP_FILE}" | awk '{print $1}')
+    fi
+    if [ -z "${EXPECTED}" ] || [ "${EXPECTED}" != "${ACTUAL}" ]; then
+        echo -e "${RED}Error: Checksum verification failed for ${BINARY_FILE}${NC}"
+        echo "  expected: ${EXPECTED:-<missing>}"
+        echo "  actual:   ${ACTUAL}"
+        rm -rf "${TMP_DIR}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓${NC} Checksum verified"
     
     # Make binary executable
     chmod +x "${TMP_FILE}"

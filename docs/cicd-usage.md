@@ -47,7 +47,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
       - name: Install SecureFlow
         run: |
@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: Install SecureFlow
         run: |
@@ -107,57 +107,47 @@ jobs:
           ./deploy.sh
 ```
 
-#### Using Reusable Workflow
+#### Using the SecureFlow Action (Recommended)
 
-**.github/workflows/decrypt-secrets.yml**:
-
-```yaml
-name: Decrypt Secrets
-
-on:
-  workflow_call:
-    inputs:
-      config-file:
-        required: false
-        type: string
-        default: 'secureflow.yaml'
-    secrets:
-      password:
-        required: true
-
-jobs:
-  decrypt:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Install SecureFlow
-        run: |
-          wget https://github.com/MayR-Labs/secureflow-go/releases/latest/download/secureflow-linux-amd64
-          chmod +x secureflow-linux-amd64
-          sudo mv secureflow-linux-amd64 /usr/local/bin/secureflow
-      
-      - name: Decrypt
-        run: |
-          secureflow decrypt --config ${{ inputs.config-file }} --password "${{ secrets.password }}" --non-interactive
-```
-
-Then use it in other workflows:
+SecureFlow ships a composite action. It installs the correct binary for the runner, verifies its checksum, and runs `decrypt` in the same job as your build:
 
 ```yaml
 jobs:
-  decrypt:
-    uses: ./.github/workflows/decrypt-secrets.yml
-    secrets:
-      password: ${{ secrets.SECUREFLOW_PASSWORD }}
-  
   build:
-    needs: decrypt
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Decrypt secrets
+        uses: MayR-Labs/secureflow-go@v1.3.0
+        with:
+          password: ${{ secrets.SECUREFLOW_PASSWORD }}
+          # config: secureflow.prod.yaml   # optional
+          # working-directory: apps/mobile # optional (monorepos)
+
       - name: Build
         run: npm run build
 ```
+
+Other modes:
+
+```yaml
+# Verify the password without touching real files
+- uses: MayR-Labs/secureflow-go@v1.3.0
+  with:
+    command: test
+    password: ${{ secrets.SECUREFLOW_PASSWORD }}
+
+# Just install the CLI and drive it yourself
+- uses: MayR-Labs/secureflow-go@v1.3.0
+  with:
+    command: install
+- run: secureflow decrypt --config secureflow.staging.yaml --non-interactive
+  env:
+    SECUREFLOW_PASSWORD: ${{ secrets.SECUREFLOW_STAGING_PASSWORD }}
+```
+
+**Note:** a reusable workflow (`on: workflow_call`) is not a good fit for decryption: it runs as its own job on a different runner, so decrypted files never reach the job that builds your app. Use the action as a step instead.
 
 #### Storing Secrets
 
@@ -914,7 +904,7 @@ jobs:
   decrypt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: Cache SecureFlow
         id: cache-secureflow
@@ -947,7 +937,7 @@ jobs:
     needs: decrypt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: Download Decrypted Files
         uses: actions/download-artifact@v3
@@ -976,7 +966,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: Download Build
         uses: actions/download-artifact@v3

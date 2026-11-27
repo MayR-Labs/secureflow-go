@@ -46,7 +46,7 @@ files:
 
 ### File Entries
 
-Each file entry in the `files` array requires the `input` and `output` fields, and optionally supports the `copy_to` field:
+Each file entry in the `files` array requires the `input` field, and optionally supports the `output` and `copy_to` fields:
 
 #### `input`
 - **Type**: String
@@ -56,9 +56,17 @@ Each file entry in the `files` array requires the `input` and `output` fields, a
 
 #### `output`
 - **Type**: String
-- **Required**: Yes
-- **Description**: Filename for the encrypted file (stored in `output_dir`)
+- **Required**: No
+- **Description**: Filename for the encrypted file (stored in `output_dir`). When omitted, it is inferred from `input`: directory separators become `-` and `.encrypted` is appended. Leading `./`, `../` and `/` are dropped.
 - **Example**: `output: database.yml.encrypted`
+
+| `input` | Inferred `output` |
+|---|---|
+| `.env.prod` | `.env.prod.encrypted` |
+| `config/database.yml` | `config-database.yml.encrypted` |
+| `android/app/keystore.jks` | `android-app-keystore.jks.encrypted` |
+
+SecureFlow validates the config on load and fails if two entries would produce the same encrypted filename — set an explicit `output` on one of them to resolve it.
 
 #### `copy_to`
 - **Type**: String
@@ -336,7 +344,7 @@ files:
 - **Never commit plaintext secrets**: Always add sensitive files to `.gitignore`
 - **Verify encrypted files**: After encryption, check that:
   - Encrypted files exist in `output_dir`
-  - `report.txt` was generated with correct metadata
+  - `manifest.json` was generated with correct metadata
   - Original files are still in place (encryption doesn't delete them)
 
 ### 7. Path Specifications

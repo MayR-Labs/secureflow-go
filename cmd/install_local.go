@@ -1,12 +1,16 @@
 package cmd
 
 import (
+	"bufio"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -78,6 +82,12 @@ func runInstallLocal(cmd *cobra.Command, args []string) error {
 		baseURL = fmt.Sprintf("https://github.com/MayR-Labs/secureflow-go/releases/download/%s", version)
 	}
 
+	// Fetch the release checksums; every binary is verified against them
+	checksums, err := fetchChecksums(baseURL + "/checksums.txt")
+	if err != nil {
+		return fmt.Errorf("failed to download checksums.txt (refusing to install unverified binaries): %w", err)
+	}
+
 	successCount := 0
 	for _, platform := range platforms {
 		binaryName := fmt.Sprintf("secureflow-%s-%s", platform.os, platform.arch)
@@ -91,6 +101,11 @@ func runInstallLocal(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Downloading %s...\n", binaryName)
 		if err := downloadFile(url, outputPath); err != nil {
 			fmt.Printf("  ⚠️  Warning: Failed to download %s: %v\n", binaryName, err)
+			continue
+		}
+		if err := verifyChecksum(outputPath, checksums[binaryName]); err != nil {
+			os.Remove(outputPath)
+			fmt.Printf("  ❌ %s: %v\n", binaryName, err)
 			continue
 		}
 
@@ -116,7 +131,7 @@ func runInstallLocal(cmd *cobra.Command, args []string) error {
 	// Create secureflow.sh launcher script
 	fmt.Println()
 	fmt.Println("📝 Creating launcher script...")
-	
+
 	launcherPath := "secureflow.sh"
 	if err := os.WriteFile(launcherPath, []byte(secureflowShellScript), 0755); err != nil {
 		return fmt.Errorf("failed to create launcher script: %w", err)
@@ -133,6 +148,48 @@ func runInstallLocal(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	fmt.Println("The launcher script will automatically select the correct executable for your platform.")
 
+	return nil
+}
+
+// fetchChecksums downloads a sha256sum-style checksums.txt into name -> hex digest
+func fetchChecksums(url string) (map[string]string, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("bad status: %s", resp.Status)
+	}
+	sums := map[string]string{}
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) == 2 {
+			sums[strings.TrimPrefix(fields[1], "*")] = strings.ToLower(fields[0])
+		}
+	}
+	return sums, scanner.Err()
+}
+
+// verifyChecksum checks path's SHA-256 against expected
+func verifyChecksum(path, expected string) error {
+	if expected == "" {
+		return fmt.Errorf("no checksum listed in checksums.txt")
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return err
+	}
+	if actual := hex.EncodeToString(h.Sum(nil)); actual != expected {
+		return fmt.Errorf("checksum mismatch (expected %s, got %s)", expected, actual)
+	}
 	return nil
 }
 

@@ -17,44 +17,42 @@ This guide covers security best practices for using SecureFlow to protect your s
 
 SecureFlow uses industry-standard encryption:
 
-- **Algorithm**: AES-256-CBC (Advanced Encryption Standard, 256-bit key, Cipher Block Chaining mode)
-- **Key Derivation**: PBKDF2 (Password-Based Key Derivation Function 2)
-- **Compatibility**: OpenSSL-compatible format
-- **Salt**: 8 random bytes per encrypted file
-- **Format**: Salted__ header + salt + encrypted data
+- **Algorithm**: AES-256-GCM (authenticated encryption with associated data)
+- **Key Derivation**: PBKDF2-HMAC-SHA256, 600,000 iterations (OWASP recommendation)
+- **Salt**: 16 random bytes per encrypted file
+- **Nonce**: 12 random bytes per encrypted file
+- **Integrity**: a 16-byte authentication tag covers the ciphertext *and* the header
 
 ### How It Works
 
 1. **Encryption Process**:
    ```
-   Password → PBKDF2 → Key + IV → AES-256-CBC → Encrypted File
+   Password + salt → PBKDF2-SHA256 (600k) → 256-bit key → AES-256-GCM(nonce, header as AAD) → Encrypted File
    ```
 
-2. **File Format**:
+2. **File Format (v2)**:
    ```
-   [Salted__][8-byte salt][encrypted data]
+   ["SFENC\0"][version=2][iterations: uint32][16-byte salt][12-byte nonce][ciphertext][16-byte tag]
    ```
 
-3. **Key Derivation**:
-   - Uses PBKDF2 with SHA-256
-   - Derives 48 bytes: 32 for key, 16 for IV
-   - Salt is randomly generated per file
+3. **Why GCM instead of CBC**:
+   - CBC (used up to 1.2) only provides confidentiality. An attacker who can modify a committed file can flip bits in the decrypted output without being detected, and "wrong password" was only guessed from padding errors.
+   - GCM authenticates every byte. A wrong password or any modification, including to the header's iteration count, makes decryption fail cleanly.
+   - The iteration count is stored per file, so it can be raised in future without breaking old files.
 
-### OpenSSL Compatibility
+### Legacy Format (SecureFlow ≤ 1.2)
 
-SecureFlow is compatible with OpenSSL commands:
+Older files use the OpenSSL-compatible format (`Salted__` + 8-byte salt + AES-256-CBC, PBKDF2 10,000 iterations). SecureFlow still decrypts them, and it shows a notice when it does. Upgrade them in place with:
 
-**Encrypt with OpenSSL**:
 ```bash
-openssl enc -aes-256-cbc -salt -pbkdf2 -in file.txt -out file.txt.encrypted -k "password"
+secureflow refresh   # keep the same password, re-encrypt as AES-GCM
 ```
 
-**Decrypt with SecureFlow**:
-```bash
-secureflow decrypt --password "password"
-```
+New files cannot be decrypted with `openssl enc`. If you need an escape hatch, keep a SecureFlow binary (e.g. via `secureflow install-local`) with your repository.
 
-And vice versa - files encrypted with SecureFlow can be decrypted with OpenSSL.
+### File Permissions
+
+Decrypted files (and `copy_to` targets) are written with mode `0600`, so only your user can read them. Encrypted files and `manifest.json` are `0644`, since they're safe to share. Writes are atomic (temp file + rename), so an interrupted run never leaves a half-written secret.
 
 ## Password Security
 
@@ -97,7 +95,7 @@ openssl rand -base64 24
 - Store in CI/CD platform's secret management
 - Share via secure channels (encrypted messaging)
 - Keep separate passwords for different projects
-- Document password hints in `report.txt`
+- Store a password hint with `--hint` (saved in `manifest.json`)
 
 **❌ DON'T**:
 - Commit passwords to version control
@@ -161,7 +159,7 @@ test_dec_keys/
 **✅ DO**:
 - Commit encrypted files to version control
 - Commit `secureflow.yaml` configuration
-- Commit `report.txt` for reference
+- Commit `manifest.json` for reference
 - Use descriptive encrypted filenames
 - Review encryption reports regularly
 
@@ -181,7 +179,7 @@ your-project/
 ├── enc_keys/                    # Encrypted files (commit this)
 │   ├── .env.prod.encrypted
 │   ├── keystore.jks.encrypted
-│   └── report.txt               # Report (commit this)
+│   └── manifest.json            # Manifest (commit this)
 ├── test_dec_keys/               # Test directory (don't commit)
 │   └── .env.prod
 ├── .env.prod                    # Plaintext (don't commit)
@@ -383,12 +381,14 @@ files:
    # Generate new password
    NEW_PASS=$(openssl rand -base64 24)
    
-   # Re-encrypt immediately
-   secureflow encrypt --password "$NEW_PASS"
+   # Re-encrypt everything with the new password
+   secureflow refresh --old-password "$OLD_PASS" --new-password "$NEW_PASS"
    
    # Update CI/CD secrets
    # Update team password manager
    ```
+
+   ⚠️ **Re-encrypting is not enough on its own.** Old encrypted files stay in your git history and can still be opened with the leaked password. Rotate the *underlying* secrets as well (API keys, keystore passwords, database credentials).
 
 2. **Investigate**:
    - Review access logs
@@ -452,7 +452,7 @@ secureflow decrypt --password "$PASSWORD" --non-interactive
 
 # Check encrypted file integrity
 ls -lh enc_keys/
-cat enc_keys/report.txt
+cat enc_keys/manifest.json
 ```
 
 ### 8. Backup Strategy
@@ -471,7 +471,7 @@ tar -czf secureflow-backup-$(date +%Y%m%d).tar.gz enc_keys/ secureflow.yaml
 **What to backup**:
 - Encrypted files (`enc_keys/`)
 - Configuration (`secureflow.yaml`)
-- Encryption reports (`report.txt`)
+- Encryption manifest (`manifest.json`)
 - Password hints (in secure location)
 
 ## Security Checklist
@@ -488,7 +488,7 @@ tar -czf secureflow-backup-$(date +%Y%m%d).tar.gz enc_keys/ secureflow.yaml
 - [ ] Verify no plaintext secrets in git history
 - [ ] Check `.gitignore` is working
 - [ ] Confirm encrypted files are in place
-- [ ] Review `report.txt` for accuracy
+- [ ] Review `manifest.json` for accuracy
 - [ ] Test decryption process
 
 ### CI/CD Setup
